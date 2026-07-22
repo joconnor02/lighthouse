@@ -120,13 +120,13 @@ class StatsOut(BaseModel):
 
 class SettingsOut(BaseModel):
     default_cidr: str
-    schedule_cron: str
     port_range: str
     scan_type: str
+    deep_scan_on_new_device: bool = False
 
 
 class SettingsUpdate(BaseModel):
     default_cidr: str | None = None
-    schedule_cron: str | None = None
     port_range: str | None = None
     scan_type: str | None = None
+    deep_scan_on_new_device: bool | None = None

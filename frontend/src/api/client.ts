@@ -201,9 +201,9 @@ export interface Stats {
 
 export interface Settings {
   default_cidr: string;
-  schedule_cron: string;
   port_range: string;
   scan_type: string;
+  deep_scan_on_new_device: boolean;
 }
 
 export const api = {

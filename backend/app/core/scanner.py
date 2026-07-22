@@ -245,15 +245,23 @@ def run_scan(scan_id: int) -> None:
 
             hosts = _extract_hosts(nm)
             try:
+                new_ips: list[str] = []
                 # Serialize upserts so parallel nmap workers don't race on SQLite.
                 with _persist_lock:
-                    _persist_hosts(db, scan, hosts)
+                    diff = _persist_hosts(db, scan, hosts)
+                    new_ips = [
+                        (d.ip or "").strip()
+                        for d in diff.new_devices
+                        if (d.ip or "").strip()
+                    ]
                     scan.status = "done"
                     scan.progress_pct = 100.0
                     scan.finished_at = datetime.now(timezone.utc)
                     scan.device_count = len(hosts)
                     db.commit()
                 log.info("Scan %s done: %d hosts", scan_id, len(hosts))
+                if scan.scan_type == "fast" and new_ips:
+                    _enqueue_deep_scans_for_new_devices(new_ips)
             except Exception as e:  # noqa: BLE001
                 # Roll back partial device/port/alert upserts before marking error.
                 db.rollback()
@@ -553,3 +561,59 @@ def _detect_closed_ports(
 
 def enqueue_scan(scan_id: int) -> None:
     _executor.submit(run_scan, scan_id)
+
+
+def _enqueue_deep_scans_for_new_devices(ips: list[str]) -> None:
+    """If enabled, queue thorough scans for newly discovered host IPs."""
+    from app.db.seed import get_setting, setting_bool
+
+    db = SessionLocal()
+    try:
+        if not setting_bool(db, "deep_scan_on_new_device"):
+            return
+        scan_type = resolve_thorough_scan_type(get_setting(db, "scan_type"))
+        try:
+            port_range = validate_port_range(get_setting(db, "port_range") or "1-1024")
+        except ValueError as e:
+            log.error("Deep scan on discovery skipped: %s", e)
+            return
+
+        for ip in ips:
+            try:
+                target = validate_target(ip)
+            except ValueError:
+                continue
+            active = (
+                db.query(Scan)
+                .filter(
+                    Scan.target_cidr == target,
+                    Scan.status.in_(("pending", "running")),
+                )
+                .first()
+            )
+            if active is not None:
+                log.info(
+                    "Deep scan skipped for %s: scan %s still %s",
+                    target,
+                    active.id,
+                    active.status,
+                )
+                continue
+            scan = Scan(
+                target_cidr=target,
+                scan_type=scan_type,
+                port_range=port_range,
+                status="pending",
+            )
+            db.add(scan)
+            db.commit()
+            db.refresh(scan)
+            enqueue_scan(scan.id)
+            log.info(
+                "Deep scan %d enqueued for newly discovered host %s (%s)",
+                scan.id,
+                target,
+                scan_type,
+            )
+    finally:
+        db.close()

@@ -68,7 +68,7 @@ def create_scans_for_all_devices(
 ) -> dict:
     """Enqueue a thorough scan for every known device IP."""
     payload = payload or ScanAllCreate()
-    settings_type = get_setting(db, "scan_type") or "fast"
+    settings_type = get_setting(db, "scan_type") or "intense"
     settings_ports = get_setting(db, "port_range") or "1-1024"
 
     try:

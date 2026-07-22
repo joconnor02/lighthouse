@@ -7,9 +7,10 @@ from app.db.session import SessionLocal
 
 DEFAULTS = {
     "default_cidr": "192.168.1.0/24",
-    "schedule_cron": "",  # empty = off
     "port_range": "1-1024",
-    "scan_type": "fast",  # fast | syn | connect | intense
+    # Thorough / deep scan type for Devices + auto deep-scan-on-discovery.
+    "scan_type": "intense",  # connect | syn | intense
+    "deep_scan_on_new_device": "false",
 }
 
 
@@ -36,3 +37,10 @@ def set_setting(db, key: str, value: str) -> None:
     else:
         row.value = value
     db.commit()
+
+
+def setting_bool(db, key: str, default: bool = False) -> bool:
+    raw = get_setting(db, key)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")

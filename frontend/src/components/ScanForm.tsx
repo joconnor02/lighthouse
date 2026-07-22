@@ -12,7 +12,7 @@ interface ScanFormProps {
 export default function ScanForm({
   defaultTarget = "",
   defaultPortRange = "1-1024",
-  defaultScanType = "fast",
+  defaultScanType = "intense",
   compact = false,
 }: ScanFormProps) {
   const [target, setTarget] = useState(defaultTarget);

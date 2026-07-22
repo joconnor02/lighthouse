@@ -63,7 +63,7 @@ The compose file grants network capabilities so deeper scan types can work insid
 2. Use **Scan** on a row or **Scan all** for a thorough port scan (uses Settings scan type when it is connect/syn/intense; otherwise **intense**).
 3. Watch per-host and scan-all progress bars; when scans finish, ports and alerts update.
 4. Check **Alerts** for anything that changed since the last scan.
-5. Optionally set an **additional** recurring schedule under **Settings** for deeper cron scans (discovery is always on).
+5. Optionally enable **deep scan on new device discovery** under **Settings**.
 
 ### Choosing a scan type
 

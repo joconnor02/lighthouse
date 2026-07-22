@@ -4,7 +4,7 @@ Technical reference for AI agents and contributors. User-facing setup and usage 
 
 ## Project overview
 
-Lighthouse is a locally hosted LAN visibility tool: nmap-based discovery + port scanning, SQLite persistence, FastAPI backend, React UI (Devices-first), automatic host discovery every 5 minutes, optional APScheduler cron for deeper scans, and alerts on device/port diffs.
+Lighthouse is a locally hosted LAN visibility tool: nmap-based discovery + port scanning, SQLite persistence, FastAPI backend, React UI (Devices-first), automatic host discovery every 5 minutes, optional deep scan on new hosts, and alerts on device/port diffs.
 
 ## Layout
 
@@ -18,7 +18,7 @@ backend/                 FastAPI app (Python 3.11+)
     core/
       scanner.py         nmap invocation + scan_type → flags mapping; parallel executor
       differ.py          Diff scans → Alert rows (new_device, new_port, port_closed)
-      scheduler.py       Always-on 5m discovery + optional APScheduler cron from settings
+      scheduler.py       Always-on 5m host discovery schedule
       auth.py            Bearer token dependency
     db/
       models.py          SQLAlchemy models (Scan, Device, Port, Alert, Setting)
@@ -52,9 +52,10 @@ Stack summary:
 - Backend listens on `LIGHTHOUSE_BIND_HOST`:`LIGHTHOUSE_BIND_PORT` (default `127.0.0.1:8000`).
 - Frontend Vite dev server on `127.0.0.1:5173`; proxies `/api` → backend.
 - Scans are started asynchronously (`POST /api/scans` creates a row and runs nmap off the request path). Up to several nmap processes run in parallel; DB host/port upserts are serialized with a lock.
-- Host discovery (`fast`) is enqueued on startup and every 5 minutes (always on), independent of Settings cron.
+- Host discovery (`fast`) is enqueued on startup and every 5 minutes (always on).
 - After a scan, `differ.py` compares against prior state and writes alerts.
-- Settings (`default_cidr`, `schedule_cron`, `port_range`, `scan_type`) live in the DB `settings` table; updating `schedule_cron` refreshes the optional deeper scheduler. Devices thorough actions use `scan_type` when connect/syn/intense, else `intense`.
+- Settings (`default_cidr`, `port_range`, `scan_type`, `deep_scan_on_new_device`) live in the DB `settings` table. Devices thorough actions and auto deep-scan-on-discovery use `scan_type` (`connect`/`syn`/`intense`).
+- When `deep_scan_on_new_device` is enabled, finishing a `fast` discovery that found new hosts enqueues a thorough scan per new IP.
 - `Scan.progress_pct` is parsed from nmap `-v` / `--stats-every` lines (`About N% done`).
 
 ## Auth
@@ -107,7 +108,7 @@ Prefix `/api`. Bearer auth unless disabled.
 | GET | `/api/alerts` | Alert feed (`acknowledged`, `kind` filters) |
 | PATCH | `/api/alerts/{id}` | Acknowledge |
 | GET | `/api/settings` | Read defaults |
-| PUT | `/api/settings` | Update defaults; reschedules optional cron |
+| PUT | `/api/settings` | Update host-discovery / deep-scan defaults |
 
 Routers are registered in `app/main.py`. Schemas live in `app/api/schemas.py`.
 

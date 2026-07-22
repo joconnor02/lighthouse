@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.core.scheduler import (
     enqueue_host_discovery,
-    refresh_schedule,
     shutdown as scheduler_shutdown,
     start_host_discovery_schedule,
 )
@@ -27,7 +26,6 @@ log = logging.getLogger("lighthouse")
 async def lifespan(app: FastAPI):
     init_db()
     recover_stale_scans()
-    refresh_schedule()
     start_host_discovery_schedule()
     enqueue_host_discovery()
     if settings.auth_token.startswith("auto-"):
