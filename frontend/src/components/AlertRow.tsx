@@ -1,4 +1,5 @@
 import type { Alert } from "../api/client";
+import { formatDateTime } from "../lib/time";
 
 interface AlertRowProps {
   alert: Alert;
@@ -36,7 +37,7 @@ export default function AlertRow({ alert, onAcknowledge }: AlertRowProps) {
         </span>
         <div>
           <div className="text-sm font-mono">{summary}</div>
-          <div className="text-xs text-slate-500">{new Date(alert.created_at).toLocaleString()}</div>
+          <div className="text-xs text-slate-500">{formatDateTime(alert.created_at)}</div>
         </div>
       </div>
       {onAcknowledge && !alert.acknowledged && (

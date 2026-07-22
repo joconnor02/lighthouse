@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { api } from "../api/client";
 import PortBadge from "../components/PortBadge";
+import { formatDateTime } from "../lib/time";
 
 export default function DeviceDetail() {
   const { id } = useParams<{ id: string }>();
@@ -44,8 +45,8 @@ export default function DeviceDetail() {
             </div>
           </div>
           <div className="text-sm text-slate-500">
-            first seen {new Date(data.first_seen).toLocaleString()} · last seen{" "}
-            {new Date(data.last_seen).toLocaleString()}
+            first seen {formatDateTime(data.first_seen)} · last seen{" "}
+            {formatDateTime(data.last_seen)}
           </div>
         </div>
       </div>
@@ -98,7 +99,7 @@ export default function DeviceDetail() {
                   <td className="px-4 py-2 text-slate-600">{p.version || "—"}</td>
                   <td className="px-4 py-2 font-mono text-xs text-slate-500">#{p.scan_id ?? "—"}</td>
                   <td className="px-4 py-2 text-xs text-slate-500">
-                    {new Date(p.last_seen).toLocaleString()}
+                    {formatDateTime(p.last_seen)}
                   </td>
                 </tr>
               ))}

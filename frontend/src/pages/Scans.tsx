@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Scan } from "../api/client";
 import ScanForm from "../components/ScanForm";
+import { formatDateTime } from "../lib/time";
 
 const STATUS_BADGE: Record<string, string> = {
   pending: "bg-slate-100 text-slate-700",
@@ -39,7 +40,10 @@ export default function Scans() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Scans</h1>
-        <p className="text-sm text-slate-600">Trigger a new scan or inspect past results.</p>
+        <p className="text-sm text-slate-600">
+          Trigger a new scan or inspect past results.{" "}
+          <span className="text-slate-400">Times shown in America/New_York.</span>
+        </p>
       </div>
 
       <div className="card p-4">
@@ -89,7 +93,7 @@ export default function Scans() {
                   <td className="px-4 py-2 text-right">{s.device_count}</td>
                   <td className="px-4 py-2 text-right">{s.alert_count}</td>
                   <td className="px-4 py-2 text-xs text-slate-500">
-                    {new Date(s.started_at).toLocaleString()}
+                    {formatDateTime(s.started_at)}
                   </td>
                 </tr>
                 {expanded === s.id && (
