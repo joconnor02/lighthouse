@@ -1,0 +1,26 @@
+services:
+  backend:
+    build: ./backend
+    container_name: lighthouse-backend
+    # SYN/intense scans need NET_RAW + NET_ADMIN; safe to leave for connect scans.
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    network_mode: host
+    environment:
+      LIGHTHOUSE_AUTH_TOKEN: ${LIGHTHOUSE_AUTH_TOKEN:-change-me-please}
+      LIGHTHOUSE_BIND_HOST: 127.0.0.1
+      LIGHTHOUSE_BIND_PORT: 8000
+      LIGHTHOUSE_DB_PATH: /data/lighthouse.db
+    volumes:
+      - ./data:/data
+      - ./nmap_xml:/app/nmap_xml
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: lighthouse-frontend
+    depends_on: [backend]
+    ports:
+      - "5173:5173"
+    restart: unless-stopped
