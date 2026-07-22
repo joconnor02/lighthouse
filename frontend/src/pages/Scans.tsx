@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Scan } from "../api/client";
 import ScanForm from "../components/ScanForm";
@@ -23,7 +23,17 @@ export default function Scans() {
     queryKey: ["scan", expanded],
     queryFn: () => api.getScan(expanded!),
     enabled: expanded != null,
+    // Poll the detail endpoint faster while a scan is running so the live
+    // nmap progress log stays fresh; stop polling once it's no longer running.
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 1500 : false),
   });
+
+  // Auto-scroll the live progress log to the bottom whenever new lines arrive.
+  const progressRef = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    const el = progressRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [detail.data?.progress_log]);
 
   return (
     <div className="space-y-6">
@@ -89,16 +99,42 @@ export default function Scans() {
                       {detail.data?.error && (
                         <div className="mb-2 text-sm text-rose-600">Error: {detail.data.error}</div>
                       )}
-                      {detail.data?.nmap_stdout && (
-                        <pre className="max-h-80 overflow-auto rounded bg-slate-900 p-3 text-xs text-slate-100">
-                          {detail.data.nmap_stdout}
-                        </pre>
-                      )}
-                      {!detail.data?.nmap_stdout && detail.data && (
-                        <div className="text-sm text-slate-500">
-                          Scan {detail.data.status}. No raw nmap output captured.
+                      {detail.data?.progress_log && (
+                        <div className="mb-2">
+                          <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            <span>Live nmap output</span>
+                            {detail.data.status === "running" && (
+                              <span className="inline-flex items-center gap-1 text-blue-600">
+                                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
+                                live
+                              </span>
+                            )}
+                          </div>
+                          <pre
+                            ref={progressRef}
+                            className="max-h-80 overflow-auto rounded bg-slate-900 p-3 text-xs text-slate-100"
+                          >
+                            {detail.data.progress_log}
+                          </pre>
                         </div>
                       )}
+                      {detail.data?.nmap_stdout && (
+                        <div className="mb-2">
+                          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            nmap CSV output
+                          </div>
+                          <pre className="max-h-80 overflow-auto rounded bg-slate-900 p-3 text-xs text-slate-100">
+                            {detail.data.nmap_stdout}
+                          </pre>
+                        </div>
+                      )}
+                      {!detail.data?.progress_log &&
+                        !detail.data?.nmap_stdout &&
+                        detail.data && (
+                          <div className="text-sm text-slate-500">
+                            Scan {detail.data.status}. No raw nmap output captured.
+                          </div>
+                        )}
                       <button
                         className="btn-ghost mt-3 text-xs"
                         onClick={() => qc.invalidateQueries({ queryKey: ["scans"] })}

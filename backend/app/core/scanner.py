@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import logging
 import re
+import shlex
+import shutil
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -45,11 +48,19 @@ SCAN_ARGS = {
 }
 
 
-def _nmap_arguments(scan_type: str, port_range: str | None) -> str:
+def _nmap_arguments(scan_type: str, port_range: str | None) -> list[str]:
+    """Build the nmap argument list (never a shell string) for a scan type.
+
+    The flag logic and SCAN_ARGS values are unchanged; we just shlex-split the
+    stored flag string into a list so it can be passed to subprocess without a
+    shell. A `-p <range>` pair is appended for non-discovery scans when a port
+    range is supplied.
+    """
     base = SCAN_ARGS.get(scan_type, SCAN_ARGS["fast"])
+    args = shlex.split(base)
     if port_range and scan_type != "fast":
-        base = f"{base} -p {port_range}"
-    return base
+        args += ["-p", port_range]
+    return args
 
 
 _executor = ThreadPoolExecutor(max_workers=2)
@@ -73,21 +84,68 @@ def run_scan(scan_id: int) -> None:
         try:
             target = validate_target(scan.target_cidr)
             port_range = validate_port_range(scan.port_range)
-            arguments = _nmap_arguments(scan.scan_type, port_range)
+            args = _nmap_arguments(scan.scan_type, port_range)
         except ValueError as e:
             _fail(db, scan, str(e))
             return
 
+        # Drive nmap as a subprocess so we can stream its verbose stats output
+        # into progress_log while the scan runs. XML is written to a file via
+        # -oX (so stdout is unused and we only pipe stderr, which avoids the
+        # classic stdout-pipe-buffer deadlock); the XML file is then handed to
+        # python-nmap for parsing. We never invoke a shell — args is a list.
+        nmap_bin = shutil.which("nmap")
+        if not nmap_bin:
+            _fail(db, scan, "nmap binary not found on PATH")
+            return
+
+        xml_path = settings.xml_dir / f"scan_{scan_id}.xml"
+        cmd = [nmap_bin, *args, "-v", "--stats-every", "5s", "-oX", str(xml_path), target]
+        log.info("Running nmap against %s with args: %s", target, " ".join(cmd))
+
+        try:
+            proc = subprocess.Popen(  # noqa: S603 — args is a controlled list, no shell
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+        except Exception as e:  # noqa: BLE001
+            _fail(db, scan, f"nmap failed to start: {e}")
+            log.exception("nmap failed to start")
+            return
+
+        assert proc.stderr is not None
+        try:
+            for line in proc.stderr:
+                scan.progress_log = (scan.progress_log or "") + line
+                db.commit()
+        finally:
+            proc.stderr.close()
+        proc.wait()
+
+        if proc.returncode != 0:
+            tail = " | ".join((scan.progress_log or "").strip().splitlines()[-5:])
+            _fail(db, scan, f"nmap exited {proc.returncode}: {tail}".rstrip())
+            log.error("nmap exited %s for scan %s", proc.returncode, scan_id)
+            return
+
+        # Parse the XML nmap wrote via -oX using python-nmap's XML parser, which
+        # populates the PortScanner in place; nm.csv() then works as it does
+        # after a normal scan.
         try:
             import nmap  # python-nmap
 
+            xml_text = xml_path.read_text()
             nm = nmap.PortScanner()
-            log.info("Running nmap against %s with args: %s", target, arguments)
-            nm.scan(hosts=target, arguments=arguments)
+            nm.analyse_nmap_xml_scan(nmap_xml_output=xml_text)
         except Exception as e:  # noqa: BLE001
-            _fail(db, scan, f"nmap failed: {e}")
-            log.exception("nmap scan failed")
+            _fail(db, scan, f"nmap xml parse failed: {e}")
+            log.exception("Failed to parse nmap XML")
             return
+
+        scan.nmap_xml_path = str(xml_path)
 
         # Capture CSV for the UI's "raw output" panel.
         try:
