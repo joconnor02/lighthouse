@@ -130,3 +130,8 @@ class SettingsUpdate(BaseModel):
     port_range: str | None = None
     scan_type: str | None = None
     deep_scan_on_new_device: bool | None = None
+
+
+class WipeResult(BaseModel):
+    ok: bool = True
+    deleted: dict[str, int]
