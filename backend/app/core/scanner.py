@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shlex
 import shutil
 import subprocess
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -29,16 +31,20 @@ _TARGET_RE = re.compile(
     r")$"
 )
 _PORT_RE = re.compile(r"^[0-9,\- ]+$")
+# nmap --stats-every / -v timing lines, e.g. "About 12.34% done"
+_PROGRESS_PCT_RE = re.compile(r"About\s+(\d+(?:\.\d+)?)%\s+done", re.IGNORECASE)
 
 # Maps our scan_type -> nmap arguments. We avoid aggressive OS/SYN scans by
 # default since those need root; users can opt in via settings.
 SCAN_ARGS = {
-    "fast": "-sn -PE -PA80,443",  # host discovery only (ping + ARP)
+    # Host discovery only: ICMP echo + TCP SYN/ACK probes (still -sn, no ports).
+    "fast": "-sn -PE -PP -PS21,22,80,443,3389 -PA80,443,8080 -PR",
     "connect": "-sT -T4",  # TCP connect scan (no root needed)
     "syn": "-sS -T4",  # SYN scan (needs root)
     "intense": "-sS -sV -O -T4 -A",  # version + OS detection (needs root)
 }
 VALID_SCAN_TYPES = frozenset(SCAN_ARGS)
+PORT_OBSERVING_TYPES = frozenset({"connect", "syn", "intense"})
 
 
 def validate_target(target: str) -> str:
@@ -64,6 +70,29 @@ def validate_scan_type(scan_type: str) -> str:
     return st
 
 
+def resolve_thorough_scan_type(settings_type: str | None) -> str:
+    """Pick scan type for Devices thorough actions.
+
+    Uses settings when port-observing; otherwise defaults to intense.
+    """
+    st = (settings_type or "").strip()
+    if st in PORT_OBSERVING_TYPES:
+        return st
+    return "intense"
+
+
+def parse_progress_pct(line: str) -> float | None:
+    """Extract 0–100 progress from an nmap verbose/stats line, if present."""
+    m = _PROGRESS_PCT_RE.search(line)
+    if not m:
+        return None
+    try:
+        pct = float(m.group(1))
+    except ValueError:
+        return None
+    return max(0.0, min(100.0, pct))
+
+
 def _nmap_arguments(scan_type: str, port_range: str | None) -> list[str]:
     """Build the nmap argument list (never a shell string) for a scan type."""
     base = SCAN_ARGS[scan_type]
@@ -73,9 +102,14 @@ def _nmap_arguments(scan_type: str, port_range: str | None) -> list[str]:
     return args
 
 
-# Serialize scan execution to avoid SQLite / device-upsert races between
-# overlapping manual and scheduled scans.
-_executor = ThreadPoolExecutor(max_workers=1)
+def _max_scan_workers() -> int:
+    cpus = os.cpu_count() or 2
+    return max(2, min(8, cpus + 2))
+
+
+# Concurrent nmap processes; DB upserts serialized via _persist_lock (SQLite).
+_executor = ThreadPoolExecutor(max_workers=_max_scan_workers())
+_persist_lock = threading.Lock()
 
 
 def _normalize_mac(mac: str | None) -> str:
@@ -175,6 +209,10 @@ def run_scan(scan_id: int) -> None:
             try:
                 for line in proc.stderr:
                     scan.progress_log = (scan.progress_log or "") + line
+                    pct = parse_progress_pct(line)
+                    if pct is not None:
+                        # Cap below 100 until the scan fully finishes.
+                        scan.progress_pct = min(99.0, pct)
                     db.commit()
             finally:
                 proc.stderr.close()
@@ -207,11 +245,14 @@ def run_scan(scan_id: int) -> None:
 
             hosts = _extract_hosts(nm)
             try:
-                _persist_hosts(db, scan, hosts)
-                scan.status = "done"
-                scan.finished_at = datetime.now(timezone.utc)
-                scan.device_count = len(hosts)
-                db.commit()
+                # Serialize upserts so parallel nmap workers don't race on SQLite.
+                with _persist_lock:
+                    _persist_hosts(db, scan, hosts)
+                    scan.status = "done"
+                    scan.progress_pct = 100.0
+                    scan.finished_at = datetime.now(timezone.utc)
+                    scan.device_count = len(hosts)
+                    db.commit()
                 log.info("Scan %s done: %d hosts", scan_id, len(hosts))
             except Exception as e:  # noqa: BLE001
                 # Roll back partial device/port/alert upserts before marking error.

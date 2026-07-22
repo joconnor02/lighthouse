@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import Devices from "./pages/Devices";
 import DeviceDetail from "./pages/DeviceDetail";
@@ -7,8 +7,8 @@ import Alerts from "./pages/Alerts";
 import SettingsPage from "./pages/Settings";
 
 const navItems = [
-  { to: "/", label: "Dashboard", end: true },
-  { to: "/devices", label: "Devices" },
+  { to: "/", label: "Devices", end: true },
+  { to: "/dashboard", label: "Dashboard" },
   { to: "/scans", label: "Scans" },
   { to: "/alerts", label: "Alerts" },
   { to: "/settings", label: "Settings" },
@@ -44,8 +44,9 @@ export default function App() {
       </header>
       <main className="mx-auto max-w-6xl px-6 py-6">
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/devices" element={<Devices />} />
+          <Route path="/" element={<Devices />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/devices" element={<Navigate to="/" replace />} />
           <Route path="/devices/:id" element={<DeviceDetail />} />
           <Route path="/scans" element={<Scans />} />
           <Route path="/alerts" element={<Alerts />} />

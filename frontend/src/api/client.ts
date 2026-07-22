@@ -124,6 +124,14 @@ export interface Scan {
   error: string | null;
   device_count: number;
   alert_count: number;
+  progress_pct: number;
+}
+
+export interface ScanAllResult {
+  scans: Scan[];
+  skipped_targets: string[];
+  scan_type: string;
+  port_range: string | null;
 }
 
 export interface ScanDetail extends Scan {
@@ -205,6 +213,11 @@ export const api = {
   getScan: (id: number) => request<ScanDetail>(`/api/scans/${id}`),
   createScan: (body: { target: string; scan_type: string; port_range?: string | null }) =>
     request<Scan>("/api/scans", { method: "POST", body: JSON.stringify(body) }),
+  scanAllDevices: (body: { scan_type?: string; port_range?: string | null } = {}) =>
+    request<ScanAllResult>("/api/scans/all", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   listDevices: () => request<Device[]>("/api/devices"),
   getDevice: (id: number) => request<DeviceDetail>(`/api/devices/${id}`),
   listPorts: () => request<PortAggregate[]>("/api/ports"),

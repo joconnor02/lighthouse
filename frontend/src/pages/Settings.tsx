@@ -49,14 +49,16 @@ export default function SettingsPage() {
     setSaveMsg("");
     setCronHelp(
       preset === ""
-        ? "Recurring scans disabled."
-        : preset === "0 * * * *"
-          ? "Every hour."
-          : preset === "0 3 * * *"
-            ? "Daily at 3:00 AM."
-            : preset === "*/30 * * * *"
-              ? "Every 30 minutes."
-              : "",
+        ? "Additional schedule off — automatic host discovery still runs every 5 minutes."
+        : preset === "*/5 * * * *"
+          ? "Additional deeper scan every 5 minutes (uses scan type below)."
+          : preset === "0 * * * *"
+            ? "Additional deeper scan every hour."
+            : preset === "0 3 * * *"
+              ? "Additional deeper scan daily at 3:00 AM."
+              : preset === "*/30 * * * *"
+                ? "Additional deeper scan every 30 minutes."
+                : "",
     );
   };
 
@@ -64,7 +66,9 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="text-sm text-slate-600">Defaults for scans and the recurring schedule.</p>
+        <p className="text-sm text-slate-600">
+          Defaults for scans. Host discovery runs automatically on launch and every 5 minutes.
+        </p>
       </div>
 
       <div className="card p-5">
@@ -165,10 +169,14 @@ export default function SettingsPage() {
                 <option value="syn">syn (needs root)</option>
                 <option value="intense">intense (version+OS, root)</option>
               </select>
+              <p className="mt-1 text-xs text-slate-500">
+                Devices thorough Scan / Scan all use this type when it is connect, syn, or intense;
+                otherwise they default to intense.
+              </p>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">
-                Schedule (cron, empty = off)
+                Additional schedule (cron, empty = off)
               </label>
               <input
                 className="input"
@@ -179,17 +187,40 @@ export default function SettingsPage() {
                 }}
                 placeholder="0 3 * * *"
               />
+              <p className="mt-1 text-xs text-slate-500">
+                Optional deeper scans using the CIDR, scan type, and port range above. Automatic
+                host discovery is always on.
+              </p>
               <div className="mt-1 flex flex-wrap gap-1 text-xs">
-                <button className="btn-ghost px-2 py-1" onClick={() => setCronPreset("")}>
+                <button type="button" className="btn-ghost px-2 py-1" onClick={() => setCronPreset("")}>
                   off
                 </button>
-                <button className="btn-ghost px-2 py-1" onClick={() => setCronPreset("*/30 * * * *")}>
+                <button
+                  type="button"
+                  className="btn-ghost px-2 py-1"
+                  onClick={() => setCronPreset("*/5 * * * *")}
+                >
+                  every 5m
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost px-2 py-1"
+                  onClick={() => setCronPreset("*/30 * * * *")}
+                >
                   every 30m
                 </button>
-                <button className="btn-ghost px-2 py-1" onClick={() => setCronPreset("0 * * * *")}>
+                <button
+                  type="button"
+                  className="btn-ghost px-2 py-1"
+                  onClick={() => setCronPreset("0 * * * *")}
+                >
                   hourly
                 </button>
-                <button className="btn-ghost px-2 py-1" onClick={() => setCronPreset("0 3 * * *")}>
+                <button
+                  type="button"
+                  className="btn-ghost px-2 py-1"
+                  onClick={() => setCronPreset("0 3 * * *")}
+                >
                   daily 3am
                 </button>
               </div>

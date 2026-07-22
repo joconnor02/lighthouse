@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -37,6 +38,8 @@ class Scan(Base):
     nmap_xml_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     nmap_stdout: Mapped[str | None] = mapped_column(Text, nullable=True)
     progress_log: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    # 0–100; updated from nmap --stats-every / -v timing lines while running.
+    progress_pct: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     # Snapshot of hosts found when the scan finished (stable; not derived from Device.scan_id).
     device_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
