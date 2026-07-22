@@ -15,6 +15,9 @@
   .btn-primary {
     @apply btn bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50;
   }
+  .btn-danger {
+    @apply btn bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50;
+  }
   .btn-ghost {
     @apply btn bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100;
   }

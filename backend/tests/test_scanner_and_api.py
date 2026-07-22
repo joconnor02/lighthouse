@@ -270,6 +270,82 @@ def test_settings_reject_invalid_scan_type_and_accept_deep_scan_flag(client):
     assert "schedule_cron" not in body
 
 
+def test_wipe_database_clears_data_and_resets_settings(client):
+    from app.config import settings as app_settings
+    from app.db.session import SessionLocal
+
+    xml_dir = app_settings.xml_dir
+    leftover = xml_dir / "scan_99.xml"
+    leftover.write_text("<nmaprun/>")
+
+    db = SessionLocal()
+    try:
+        scan = Scan(target_cidr="10.0.0.0/24", scan_type="connect", status="done", device_count=1)
+        db.add(scan)
+        db.flush()
+        device = Device(scan_id=scan.id, ip="10.0.0.5", mac="11:22:33:44:55:66")
+        db.add(device)
+        db.flush()
+        db.add(
+            Port(
+                device_id=device.id,
+                scan_id=scan.id,
+                port=443,
+                protocol="tcp",
+                state="open",
+                service="https",
+            )
+        )
+        db.add(
+            Alert(
+                kind="new_device",
+                severity="info",
+                detail_json="{}",
+                scan_id=scan.id,
+                device_id=device.id,
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    client.put("/api/settings", json={"default_cidr": "10.0.0.0/24", "scan_type": "syn"})
+
+    res = client.post("/api/settings/wipe")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["deleted"]["scans"] >= 1
+    assert body["deleted"]["devices"] >= 1
+    assert body["deleted"]["ports"] >= 1
+    assert body["deleted"]["alerts"] >= 1
+
+    assert client.get("/api/devices").json() == []
+    assert client.get("/api/scans").json() == []
+    assert client.get("/api/alerts").json() == []
+
+    settings = client.get("/api/settings").json()
+    assert settings["default_cidr"] == "192.168.1.0/24"
+    assert settings["scan_type"] == "intense"
+    assert settings["deep_scan_on_new_device"] is False
+    assert not leftover.exists()
+
+
+def test_wipe_database_rejects_when_scan_running(client):
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        db.add(Scan(target_cidr="10.0.0.0/24", scan_type="fast", status="running"))
+        db.commit()
+    finally:
+        db.close()
+
+    res = client.post("/api/settings/wipe")
+    assert res.status_code == 409
+    assert client.get("/api/scans").json()  # still present
+
+
 def test_enqueue_deep_scans_for_new_devices(client, monkeypatch):
     from app.core import scanner as scanner_mod
     from app.db.seed import set_setting

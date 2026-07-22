@@ -206,6 +206,11 @@ export interface Settings {
   deep_scan_on_new_device: boolean;
 }
 
+export interface WipeResult {
+  ok: boolean;
+  deleted: Record<string, number>;
+}
+
 export const api = {
   health: () => request<{ status: string }>("/api/health"),
   stats: () => request<Stats>("/api/stats"),
@@ -232,4 +237,5 @@ export const api = {
   getSettings: () => request<Settings>("/api/settings"),
   updateSettings: (body: Partial<Settings>) =>
     request<Settings>("/api/settings", { method: "PUT", body: JSON.stringify(body) }),
+  wipeDatabase: () => request<WipeResult>("/api/settings/wipe", { method: "POST" }),
 };

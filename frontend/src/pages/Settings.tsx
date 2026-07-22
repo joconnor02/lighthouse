@@ -12,6 +12,8 @@ export default function SettingsPage() {
   const [tokenInput, setTokenInput] = useState(getToken() || "");
   const [tokenMsg, setTokenMsg] = useState("");
   const [saveMsg, setSaveMsg] = useState("");
+  const [wipeConfirm, setWipeConfirm] = useState("");
+  const [wipeMsg, setWipeMsg] = useState("");
 
   useEffect(() => {
     if (data) setForm(data);
@@ -34,11 +36,27 @@ export default function SettingsPage() {
     return () => window.clearTimeout(t);
   }, [saveMsg]);
 
+  useEffect(() => {
+    if (!wipeMsg) return;
+    const t = window.setTimeout(() => setWipeMsg(""), 6000);
+    return () => window.clearTimeout(t);
+  }, [wipeMsg]);
+
   const save = useMutation({
     mutationFn: (body: Partial<Settings>) => api.updateSettings(body),
     onSuccess: () => {
       setSaveMsg("Saved.");
       qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+  });
+
+  const wipe = useMutation({
+    mutationFn: () => api.wipeDatabase(),
+    onSuccess: (result) => {
+      const total = Object.values(result.deleted).reduce((a, b) => a + b, 0);
+      setWipeMsg(`Database wiped (${total} rows removed). Settings restored to defaults.`);
+      setWipeConfirm("");
+      qc.invalidateQueries();
     },
   });
 
@@ -208,6 +226,50 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      <div className="card space-y-4 border-rose-200 p-5">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-rose-600">Danger zone</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Permanently delete all scans, devices, ports, and alerts. Settings are reset to defaults.
+            This cannot be undone.
+          </p>
+        </div>
+
+        <div className="max-w-md">
+          <label className="mb-1 block text-xs font-medium text-slate-600">Are you sure?</label>
+          <select
+            className="input"
+            value={wipeConfirm}
+            onChange={(e) => {
+              setWipeConfirm(e.target.value);
+              setWipeMsg("");
+            }}
+          >
+            <option value="">Select to confirm…</option>
+            <option value="no">No, keep my data</option>
+            <option value="yes">Yes, permanently wipe the database</option>
+          </select>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className="btn-danger"
+            disabled={wipeConfirm !== "yes" || wipe.isPending}
+            onClick={() => {
+              setWipeMsg("");
+              wipe.mutate();
+            }}
+          >
+            {wipe.isPending ? "Wiping…" : "Wipe database"}
+          </button>
+          {wipe.isError && (
+            <span className="text-sm text-rose-600">{(wipe.error as Error).message}</span>
+          )}
+          {wipeMsg && <span className="text-sm text-emerald-600">{wipeMsg}</span>}
+        </div>
+      </div>
     </div>
   );
 }

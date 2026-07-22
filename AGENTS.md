@@ -109,6 +109,7 @@ Prefix `/api`. Bearer auth unless disabled.
 | PATCH | `/api/alerts/{id}` | Acknowledge |
 | GET | `/api/settings` | Read defaults |
 | PUT | `/api/settings` | Update host-discovery / deep-scan defaults |
+| POST | `/api/settings/wipe` | Delete scans/devices/ports/alerts; reset settings to defaults |
 
 Routers are registered in `app/main.py`. Schemas live in `app/api/schemas.py`.
 
