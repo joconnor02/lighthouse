@@ -97,10 +97,8 @@ Copy `.env.example` to `backend/.env` and adjust as needed:
 
 Ideas for later versions (not in v0.1):
 
+- Live traffic analysis (packet capture / flow visibility)
 - CVE matching against detected service versions
-- Live packet capture / flow analysis
-- Multi-user auth and roles
-- Email / webhook alert delivery
 
 ## For contributors & agents
 
