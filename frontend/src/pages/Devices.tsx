@@ -2,10 +2,11 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
 import DeviceTable from "../components/DeviceTable";
+import QueryError from "../components/QueryError";
 
 export default function Devices() {
   const navigate = useNavigate();
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["devices"],
     queryFn: api.listDevices,
     refetchInterval: 15_000,
@@ -23,6 +24,7 @@ export default function Devices() {
         </button>
       </div>
       {isLoading && <div className="card p-6 text-sm text-slate-500">Loading…</div>}
+      {isError && <QueryError error={error} onRetry={() => refetch()} />}
       {data && (
         <DeviceTable
           devices={data}

@@ -37,6 +37,8 @@ class Scan(Base):
     nmap_xml_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     nmap_stdout: Mapped[str | None] = mapped_column(Text, nullable=True)
     progress_log: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    # Snapshot of hosts found when the scan finished (stable; not derived from Device.scan_id).
+    device_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     devices: Mapped[list["Device"]] = relationship(
         back_populates="scan", cascade="all, delete-orphan"

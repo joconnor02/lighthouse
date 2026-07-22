@@ -17,10 +17,11 @@ router = APIRouter(prefix="/ports", tags=["ports"], dependencies=[Depends(requir
 
 @router.get("", response_model=list[PortAggregate])
 def list_open_ports(db: Session = Depends(get_db)) -> list[dict]:
+    """Currently open ports only (latest scan per device), not historical rows."""
     rows = (
         db.query(Port, Device)
         .join(Device, Port.device_id == Device.id)
-        .filter(Port.state == "open")
+        .filter(Port.state == "open", Port.scan_id == Device.scan_id)
         .order_by(desc(Port.last_seen))
         .all()
     )

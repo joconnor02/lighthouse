@@ -17,6 +17,16 @@ from app.api.schemas import AlertOut
 router = APIRouter(prefix="/alerts", tags=["alerts"], dependencies=[Depends(require_token)])
 
 
+def _parse_detail(raw: str | None) -> dict:
+    try:
+        detail = json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        return {"raw": raw}
+    if isinstance(detail, dict):
+        return detail
+    return {"raw": detail}
+
+
 def _to_out(a: Alert) -> dict:
     return {
         "id": a.id,
@@ -24,7 +34,7 @@ def _to_out(a: Alert) -> dict:
         "device_id": a.device_id,
         "kind": a.kind,
         "severity": a.severity,
-        "detail": json.loads(a.detail_json or "{}"),
+        "detail": _parse_detail(a.detail_json),
         "acknowledged": a.acknowledged,
         "created_at": a.created_at,
     }

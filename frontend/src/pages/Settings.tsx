@@ -10,20 +10,38 @@ export default function SettingsPage() {
   });
   const [form, setForm] = useState<Settings | null>(null);
   const [tokenInput, setTokenInput] = useState(getToken() || "");
+  const [tokenMsg, setTokenMsg] = useState("");
   const [cronHelp, setCronHelp] = useState("");
+  const [saveMsg, setSaveMsg] = useState("");
 
   useEffect(() => {
     if (data) setForm(data);
   }, [data]);
 
+  useEffect(() => {
+    if (!tokenMsg) return;
+    const t = window.setTimeout(() => setTokenMsg(""), 4000);
+    return () => window.clearTimeout(t);
+  }, [tokenMsg]);
+
+  useEffect(() => {
+    if (!saveMsg) return;
+    const t = window.setTimeout(() => setSaveMsg(""), 4000);
+    return () => window.clearTimeout(t);
+  }, [saveMsg]);
+
   const save = useMutation({
     mutationFn: (body: Partial<Settings>) => api.updateSettings(body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
+    onSuccess: () => {
+      setSaveMsg("Saved.");
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
   });
 
   const setCronPreset = (preset: string) => {
     if (!form) return;
     setForm({ ...form, schedule_cron: preset });
+    setSaveMsg("");
     setCronHelp(
       preset === ""
         ? "Recurring scans disabled."
@@ -53,11 +71,14 @@ export default function SettingsPage() {
           <code className="rounded bg-slate-100 px-1">LIGHTHOUSE_AUTH_TOKEN</code> in the backend{" "}
           <code className="rounded bg-slate-100 px-1">.env</code>.
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             className="input"
             value={tokenInput}
-            onChange={(e) => setTokenInput(e.target.value)}
+            onChange={(e) => {
+              setTokenInput(e.target.value);
+              setTokenMsg("");
+            }}
             placeholder="paste token"
           />
           <button
@@ -65,11 +86,13 @@ export default function SettingsPage() {
             onClick={() => {
               setToken(tokenInput.trim());
               resetAuthPrompt();
+              setTokenMsg("Token saved — refreshing…");
               qc.invalidateQueries();
             }}
           >
             Save token
           </button>
+          {tokenMsg && <span className="text-sm text-emerald-600">{tokenMsg}</span>}
         </div>
       </div>
 
@@ -94,7 +117,10 @@ export default function SettingsPage() {
               <input
                 className="input"
                 value={form.default_cidr}
-                onChange={(e) => setForm({ ...form, default_cidr: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, default_cidr: e.target.value });
+                  setSaveMsg("");
+                }}
               />
             </div>
             <div>
@@ -102,7 +128,10 @@ export default function SettingsPage() {
               <input
                 className="input"
                 value={form.port_range}
-                onChange={(e) => setForm({ ...form, port_range: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, port_range: e.target.value });
+                  setSaveMsg("");
+                }}
               />
             </div>
             <div>
@@ -110,7 +139,10 @@ export default function SettingsPage() {
               <select
                 className="input"
                 value={form.scan_type}
-                onChange={(e) => setForm({ ...form, scan_type: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, scan_type: e.target.value });
+                  setSaveMsg("");
+                }}
               >
                 <option value="fast">fast (host discovery)</option>
                 <option value="connect">connect (TCP, no root)</option>
@@ -125,7 +157,10 @@ export default function SettingsPage() {
               <input
                 className="input"
                 value={form.schedule_cron}
-                onChange={(e) => setForm({ ...form, schedule_cron: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, schedule_cron: e.target.value });
+                  setSaveMsg("");
+                }}
                 placeholder="0 3 * * *"
               />
               <div className="mt-1 flex flex-wrap gap-1 text-xs">
@@ -148,13 +183,16 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             <button
               className="btn-primary"
-              onClick={() => save.mutate(form)}
+              onClick={() => {
+                setSaveMsg("");
+                save.mutate(form);
+              }}
               disabled={save.isPending}
             >
               {save.isPending ? "Saving…" : "Save settings"}
             </button>
             {save.isError && <span className="text-sm text-rose-600">{(save.error as Error).message}</span>}
-            {save.isSuccess && <span className="text-sm text-emerald-600">Saved.</span>}
+            {saveMsg && <span className="text-sm text-emerald-600">{saveMsg}</span>}
           </div>
         </div>
       )}
