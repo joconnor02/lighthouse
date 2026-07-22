@@ -13,6 +13,13 @@ class ScanCreate(BaseModel):
     port_range: str | None = Field(None, description="e.g. 1-1024 or 22,80,443")
 
 
+class ScanAllCreate(BaseModel):
+    scan_type: str | None = Field(
+        None, description="connect | syn | intense (default: thorough from settings)"
+    )
+    port_range: str | None = Field(None, description="e.g. 1-1024 or 22,80,443")
+
+
 class ScanOut(BaseModel):
     id: int
     started_at: datetime
@@ -24,6 +31,7 @@ class ScanOut(BaseModel):
     error: str | None
     device_count: int = 0
     alert_count: int = 0
+    progress_pct: float = 0.0
 
     class Config:
         from_attributes = True
@@ -33,6 +41,13 @@ class ScanDetail(ScanOut):
     nmap_xml_path: str | None
     nmap_stdout: str | None
     progress_log: str = ""
+
+
+class ScanAllOut(BaseModel):
+    scans: list[ScanOut]
+    skipped_targets: list[str] = []
+    scan_type: str
+    port_range: str | None
 
 
 class PortOut(BaseModel):
@@ -105,13 +120,13 @@ class StatsOut(BaseModel):
 
 class SettingsOut(BaseModel):
     default_cidr: str
-    schedule_cron: str
     port_range: str
     scan_type: str
+    deep_scan_on_new_device: bool = False
 
 
 class SettingsUpdate(BaseModel):
     default_cidr: str | None = None
-    schedule_cron: str | None = None
     port_range: str | None = None
     scan_type: str | None = None
+    deep_scan_on_new_device: bool | None = None

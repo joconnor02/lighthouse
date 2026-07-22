@@ -22,7 +22,7 @@ export default function DeviceDetail() {
     return (
       <div className="card p-6 text-sm text-rose-600">
         Invalid device id.
-        <button className="btn-ghost ml-3 text-xs" onClick={() => navigate("/devices")}>
+        <button className="btn-ghost ml-3 text-xs" onClick={() => navigate("/")}>
           Back to devices
         </button>
       </div>
@@ -46,7 +46,7 @@ export default function DeviceDetail() {
 
   return (
     <div className="space-y-4">
-      <button className="btn-ghost text-sm" onClick={() => navigate("/devices")}>
+      <button className="btn-ghost text-sm" onClick={() => navigate("/")}>
         ← Back to devices
       </button>
       <div className="card p-5">

@@ -8,7 +8,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.core.scheduler import refresh_schedule, shutdown as scheduler_shutdown
+from app.core.scheduler import (
+    enqueue_host_discovery,
+    shutdown as scheduler_shutdown,
+    start_host_discovery_schedule,
+)
 from app.core.scanner import recover_stale_scans, shutdown_executor
 from app.db.session import init_db
 from app.api import alerts, devices, ports, scans, settings as settings_router, stats
@@ -22,7 +26,8 @@ log = logging.getLogger("lighthouse")
 async def lifespan(app: FastAPI):
     init_db()
     recover_stale_scans()
-    refresh_schedule()
+    start_host_discovery_schedule()
+    enqueue_host_discovery()
     if settings.auth_token.startswith("auto-"):
         log.warning(
             "Using auto-generated auth token (set LIGHTHOUSE_AUTH_TOKEN to fix): %s",

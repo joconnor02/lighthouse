@@ -11,7 +11,6 @@ export default function SettingsPage() {
   const [form, setForm] = useState<Settings | null>(null);
   const [tokenInput, setTokenInput] = useState(getToken() || "");
   const [tokenMsg, setTokenMsg] = useState("");
-  const [cronHelp, setCronHelp] = useState("");
   const [saveMsg, setSaveMsg] = useState("");
 
   useEffect(() => {
@@ -43,28 +42,13 @@ export default function SettingsPage() {
     },
   });
 
-  const setCronPreset = (preset: string) => {
-    if (!form) return;
-    setForm({ ...form, schedule_cron: preset });
-    setSaveMsg("");
-    setCronHelp(
-      preset === ""
-        ? "Recurring scans disabled."
-        : preset === "0 * * * *"
-          ? "Every hour."
-          : preset === "0 3 * * *"
-            ? "Daily at 3:00 AM."
-            : preset === "*/30 * * * *"
-              ? "Every 30 minutes."
-              : "",
-    );
-  };
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="text-sm text-slate-600">Defaults for scans and the recurring schedule.</p>
+        <p className="text-sm text-slate-600">
+          Host discovery runs automatically on launch and every 5 minutes.
+        </p>
       </div>
 
       <div className="card p-5">
@@ -126,18 +110,71 @@ export default function SettingsPage() {
       )}
 
       {form && (
-        <div className="card p-5 space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+        <div className="card space-y-4 p-5">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Host discovery
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Fast discovery scans this network on launch and every 5 minutes. Discovery itself does
+              not open ports — it only finds live hosts.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Network CIDR</label>
+            <input
+              className="input max-w-md"
+              value={form.default_cidr}
+              onChange={(e) => {
+                setForm({ ...form, default_cidr: e.target.value });
+                setSaveMsg("");
+              }}
+              placeholder="192.168.1.0/24"
+            />
+          </div>
+
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+              checked={form.deep_scan_on_new_device}
+              onChange={(e) => {
+                setForm({ ...form, deep_scan_on_new_device: e.target.checked });
+                setSaveMsg("");
+              }}
+            />
+            <span>
+              <span className="block text-sm font-medium text-slate-800">
+                Perform deep scan on new device discovery
+              </span>
+              <span className="mt-0.5 block text-xs text-slate-500">
+                When discovery finds a host for the first time, automatically queue a thorough port
+                scan using the type and port range below.
+              </span>
+            </span>
+          </label>
+
+          <div className="grid gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600">Default CIDR</label>
-              <input
+              <label className="mb-1 block text-xs font-medium text-slate-600">
+                Deep / thorough scan type
+              </label>
+              <select
                 className="input"
-                value={form.default_cidr}
+                value={form.scan_type}
                 onChange={(e) => {
-                  setForm({ ...form, default_cidr: e.target.value });
+                  setForm({ ...form, scan_type: e.target.value });
                   setSaveMsg("");
                 }}
-              />
+              >
+                <option value="connect">connect (TCP, no root)</option>
+                <option value="syn">syn (needs root)</option>
+                <option value="intense">intense (version+OS, root)</option>
+              </select>
+              <p className="mt-1 text-xs text-slate-500">
+                Used for Devices Scan / Scan all and for automatic deep scans on new hosts.
+              </p>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">Port range</label>
@@ -148,54 +185,11 @@ export default function SettingsPage() {
                   setForm({ ...form, port_range: e.target.value });
                   setSaveMsg("");
                 }}
+                placeholder="1-1024"
               />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600">Scan type</label>
-              <select
-                className="input"
-                value={form.scan_type}
-                onChange={(e) => {
-                  setForm({ ...form, scan_type: e.target.value });
-                  setSaveMsg("");
-                }}
-              >
-                <option value="fast">fast (host discovery)</option>
-                <option value="connect">connect (TCP, no root)</option>
-                <option value="syn">syn (needs root)</option>
-                <option value="intense">intense (version+OS, root)</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-600">
-                Schedule (cron, empty = off)
-              </label>
-              <input
-                className="input"
-                value={form.schedule_cron}
-                onChange={(e) => {
-                  setForm({ ...form, schedule_cron: e.target.value });
-                  setSaveMsg("");
-                }}
-                placeholder="0 3 * * *"
-              />
-              <div className="mt-1 flex flex-wrap gap-1 text-xs">
-                <button className="btn-ghost px-2 py-1" onClick={() => setCronPreset("")}>
-                  off
-                </button>
-                <button className="btn-ghost px-2 py-1" onClick={() => setCronPreset("*/30 * * * *")}>
-                  every 30m
-                </button>
-                <button className="btn-ghost px-2 py-1" onClick={() => setCronPreset("0 * * * *")}>
-                  hourly
-                </button>
-                <button className="btn-ghost px-2 py-1" onClick={() => setCronPreset("0 3 * * *")}>
-                  daily 3am
-                </button>
-              </div>
-              {cronHelp && <div className="mt-1 text-xs text-slate-500">{cronHelp}</div>}
             </div>
           </div>
+
           <div className="flex items-center gap-3">
             <button
               className="btn-primary"
@@ -207,7 +201,9 @@ export default function SettingsPage() {
             >
               {save.isPending ? "Saving…" : "Save settings"}
             </button>
-            {save.isError && <span className="text-sm text-rose-600">{(save.error as Error).message}</span>}
+            {save.isError && (
+              <span className="text-sm text-rose-600">{(save.error as Error).message}</span>
+            )}
             {saveMsg && <span className="text-sm text-emerald-600">{saveMsg}</span>}
           </div>
         </div>

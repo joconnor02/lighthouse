@@ -186,6 +186,61 @@ def test_open_port_count_is_current_only(client):
     assert ports[0]["port"] == 22
 
 
+def test_parse_progress_pct():
+    from app.core.scanner import parse_progress_pct
+
+    assert parse_progress_pct("SYN Stealth Scan Timing: About 12.34% done; ETC: 12:00") == 12.34
+    assert parse_progress_pct("About 100% done") == 100.0
+    assert parse_progress_pct("About 0.5% done") == 0.5
+    assert parse_progress_pct("no percentage here") is None
+
+
+def test_resolve_thorough_scan_type():
+    from app.core.scanner import resolve_thorough_scan_type
+
+    assert resolve_thorough_scan_type("fast") == "intense"
+    assert resolve_thorough_scan_type(None) == "intense"
+    assert resolve_thorough_scan_type("connect") == "connect"
+    assert resolve_thorough_scan_type("syn") == "syn"
+    assert resolve_thorough_scan_type("intense") == "intense"
+
+
+def test_scan_all_enqueues_per_device(client):
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        s0 = Scan(target_cidr="10.0.0.0/24", scan_type="fast", status="done", device_count=2)
+        db.add(s0)
+        db.flush()
+        db.add(Device(scan_id=s0.id, ip="10.0.0.1", mac="aa:bb:cc:00:00:01"))
+        db.add(Device(scan_id=s0.id, ip="10.0.0.2", mac="aa:bb:cc:00:00:02"))
+        db.commit()
+    finally:
+        db.close()
+
+    res = client.post("/api/scans/all", json={})
+    assert res.status_code == 201
+    body = res.json()
+    assert body["scan_type"] == "intense"  # settings default thorough type
+    assert len(body["scans"]) == 2
+    targets = {s["target_cidr"] for s in body["scans"]}
+    assert targets == {"10.0.0.1", "10.0.0.2"}
+    assert all(s["progress_pct"] == 0 for s in body["scans"])
+
+    # Second call should skip while pending/running (enqueue stubbed; still pending).
+    res2 = client.post("/api/scans/all", json={"scan_type": "connect"})
+    assert res2.status_code == 201
+    body2 = res2.json()
+    assert body2["scans"] == []
+    assert set(body2["skipped_targets"]) == {"10.0.0.1", "10.0.0.2"}
+
+
+def test_scan_all_rejects_fast_override(client):
+    res = client.post("/api/scans/all", json={"scan_type": "fast"})
+    assert res.status_code == 400
+
+
 def test_create_scan_rejects_bad_target_and_type(client):
     bad_target = client.post(
         "/api/scans",
@@ -200,9 +255,58 @@ def test_create_scan_rejects_bad_target_and_type(client):
     assert bad_type.status_code == 400
 
 
-def test_settings_reject_invalid_cron(client):
-    res = client.put("/api/settings", json={"schedule_cron": "not a cron"})
-    assert res.status_code == 400
+def test_settings_reject_invalid_scan_type_and_accept_deep_scan_flag(client):
+    bad = client.put("/api/settings", json={"scan_type": "fast"})
+    assert bad.status_code == 400
+
+    res = client.put(
+        "/api/settings",
+        json={"deep_scan_on_new_device": True, "scan_type": "connect"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["deep_scan_on_new_device"] is True
+    assert body["scan_type"] == "connect"
+    assert "schedule_cron" not in body
+
+
+def test_enqueue_deep_scans_for_new_devices(client, monkeypatch):
+    from app.core import scanner as scanner_mod
+    from app.db.seed import set_setting
+    from app.db.session import SessionLocal
+
+    enqueued: list[int] = []
+    monkeypatch.setattr(scanner_mod, "enqueue_scan", lambda scan_id: enqueued.append(scan_id))
+
+    db = SessionLocal()
+    try:
+        set_setting(db, "deep_scan_on_new_device", "true")
+        set_setting(db, "scan_type", "syn")
+        set_setting(db, "port_range", "22,80")
+    finally:
+        db.close()
+
+    scanner_mod._enqueue_deep_scans_for_new_devices(["10.9.9.1", "bad host"])
+    assert len(enqueued) == 1
+
+    db = SessionLocal()
+    try:
+        scan = db.get(Scan, enqueued[0])
+        assert scan is not None
+        assert scan.target_cidr == "10.9.9.1"
+        assert scan.scan_type == "syn"
+        assert scan.port_range == "22,80"
+    finally:
+        db.close()
+
+    db = SessionLocal()
+    try:
+        set_setting(db, "deep_scan_on_new_device", "false")
+    finally:
+        db.close()
+    before = len(enqueued)
+    scanner_mod._enqueue_deep_scans_for_new_devices(["10.9.9.2"])
+    assert len(enqueued) == before
 
 
 def test_scan_device_count_persists(client):

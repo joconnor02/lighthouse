@@ -53,7 +53,7 @@ export default function Dashboard() {
         <ScanForm
           defaultTarget={settings.data?.default_cidr || ""}
           defaultPortRange={settings.data?.port_range || "1-1024"}
-          defaultScanType={settings.data?.scan_type || "fast"}
+          defaultScanType={settings.data?.scan_type || "intense"}
         />
       </div>
 

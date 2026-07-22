@@ -27,7 +27,7 @@ Lighthouse runs entirely on your machine. It scans your LAN, remembers what it f
 
 That starts both the API and the web UI. Open **http://127.0.0.1:5173**.
 
-On first launch, check the backend logs for an auth token (or set one in `backend/.env` — see below). Paste it into **Settings** in the UI, then run a scan from the **Dashboard**.
+On first launch, check the backend logs for an auth token (or set one in `backend/.env` — see below). Paste it into **Settings** in the UI. Host discovery starts automatically; open **Devices** (home) to scan individual hosts or scan all.
 
 ### Manual setup (optional)
 
@@ -59,20 +59,20 @@ The compose file grants network capabilities so deeper scan types can work insid
 
 ## Using Lighthouse
 
-1. Open the dashboard and enter the network to scan (usually something like `192.168.1.0/24`).
-2. Pick a scan type — **connect** is the safe default and does not need admin privileges.
-3. Start the scan and watch progress; when it finishes, devices and ports appear in the tables.
+1. Open the app — **Devices** is the home page. Host discovery runs on launch and every 5 minutes.
+2. Use **Scan** on a row or **Scan all** for a thorough port scan (uses Settings scan type when it is connect/syn/intense; otherwise **intense**).
+3. Watch per-host and scan-all progress bars; when scans finish, ports and alerts update.
 4. Check **Alerts** for anything that changed since the last scan.
-5. Optionally set a recurring schedule under **Settings**.
+5. Optionally enable **deep scan on new device discovery** under **Settings**.
 
 ### Choosing a scan type
 
 | Type | What it does | Privileges |
 |------|----------------|------------|
-| **fast** | Finds live hosts only (no port scan) | None |
-| **connect** | Scans TCP ports the normal way | None — recommended default |
+| **fast** | Finds live hosts only (no port scan) — used by automatic discovery | None |
+| **connect** | Scans TCP ports the normal way | None |
 | **syn** | Faster SYN port scan | Root / elevated network capability |
-| **intense** | Ports + service versions + OS guesses | Root / elevated network capability |
+| **intense** | Ports + service versions + OS guesses — default for Devices thorough actions | Root / elevated network capability |
 
 Only scan networks you own or are explicitly allowed to scan.
 

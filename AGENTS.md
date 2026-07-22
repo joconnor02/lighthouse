@@ -4,33 +4,33 @@ Technical reference for AI agents and contributors. User-facing setup and usage 
 
 ## Project overview
 
-Lighthouse is a locally hosted LAN visibility tool: nmap-based discovery + port scanning, SQLite persistence, FastAPI backend, React dashboard, optional APScheduler cron scans, and alerts on device/port diffs.
+Lighthouse is a locally hosted LAN visibility tool: nmap-based discovery + port scanning, SQLite persistence, FastAPI backend, React UI (Devices-first), automatic host discovery every 5 minutes, optional deep scan on new hosts, and alerts on device/port diffs.
 
 ## Layout
 
 ```
 backend/                 FastAPI app (Python 3.11+)
   app/
-    main.py              App entry, CORS, lifespan (DB init + scheduler)
+    main.py              App entry, CORS, lifespan (DB init + discovery + scheduler)
     config.py            pydantic-settings; env prefix LIGHTHOUSE_
     api/                 Route modules: scans, devices, ports, alerts, stats, settings
     api/schemas.py       Pydantic request/response models
     core/
-      scanner.py         nmap invocation + scan_type → flags mapping
+      scanner.py         nmap invocation + scan_type → flags mapping; parallel executor
       differ.py          Diff scans → Alert rows (new_device, new_port, port_closed)
-      scheduler.py       APScheduler cron refresh from settings
+      scheduler.py       Always-on 5m host discovery schedule
       auth.py            Bearer token dependency
     db/
       models.py          SQLAlchemy models (Scan, Device, Port, Alert, Setting)
       session.py         Engine / SessionLocal / init_db
       seed.py            Default settings seed
-  alembic/               Migrations (0001_initial, 0002_add_progress_log)
+  alembic/               Migrations (0001…0004_scan_progress_pct)
   run.sh                 uvicorn with reload
 frontend/                React + Vite + TypeScript + Tailwind
   src/
     api/client.ts        Fetch wrapper; Authorization from localStorage
-    pages/               Dashboard, Devices, DeviceDetail, Scans, Alerts, Settings
-    components/          ScanForm, DeviceTable, AlertRow, StatCard, PortBadge
+    pages/               Devices (home), Dashboard, DeviceDetail, Scans, Alerts, Settings
+    components/          ScanForm, DeviceTable, ProgressBar, AlertRow, StatCard, PortBadge
     lib/time.ts          Display timezone helpers (America/New_York oriented)
 dev.sh                   One-command local launch (venv, npm, alembic, both servers)
 docker-compose.yml       Host-networked backend + frontend; NET_RAW/NET_ADMIN caps
@@ -51,9 +51,12 @@ Stack summary:
 
 - Backend listens on `LIGHTHOUSE_BIND_HOST`:`LIGHTHOUSE_BIND_PORT` (default `127.0.0.1:8000`).
 - Frontend Vite dev server on `127.0.0.1:5173`; proxies `/api` → backend.
-- Scans are started asynchronously (`POST /api/scans` creates a row and runs nmap off the request path).
+- Scans are started asynchronously (`POST /api/scans` creates a row and runs nmap off the request path). Up to several nmap processes run in parallel; DB host/port upserts are serialized with a lock.
+- Host discovery (`fast`) is enqueued on startup and every 5 minutes (always on).
 - After a scan, `differ.py` compares against prior state and writes alerts.
-- Settings (`default_cidr`, `schedule_cron`, `port_range`, `scan_type`) live in the DB `settings` table; updating them refreshes the scheduler.
+- Settings (`default_cidr`, `port_range`, `scan_type`, `deep_scan_on_new_device`) live in the DB `settings` table. Devices thorough actions and auto deep-scan-on-discovery use `scan_type` (`connect`/`syn`/`intense`).
+- When `deep_scan_on_new_device` is enabled, finishing a `fast` discovery that found new hosts enqueues a thorough scan per new IP.
+- `Scan.progress_pct` is parsed from nmap `-v` / `--stats-every` lines (`About N% done`).
 
 ## Auth
 
@@ -65,10 +68,10 @@ Stack summary:
 
 | Type | nmap args | Root? | Notes |
 |------|-----------|-------|-------|
-| `fast` | `-sn -PE -PA80,443` | no | Host discovery only |
-| `connect` | `-sT -T4` | no | Default TCP connect |
+| `fast` | `-sn -PE -PP -PS21,22,80,443,3389 -PA80,443,8080 -PR` | no | Host discovery only (auto every 5m) |
+| `connect` | `-sT -T4` | no | TCP connect |
 | `syn` | `-sS -T4` | yes | Needs root or `cap_net_raw` |
-| `intense` | `-sS -sV -O -T4 -A` | yes | Version + OS detection |
+| `intense` | `-sS -sV -O -T4 -A` | yes | Version + OS detection; Devices thorough default |
 
 Port range is appended for non-`fast` types when configured. Targets are validated as IP/CIDR/hostname (leading `-` rejected) and passed after `--` to nmap via subprocess (never a shell).
 
@@ -96,7 +99,8 @@ Prefix `/api`. Bearer auth unless disabled.
 | GET | `/api/health` | Liveness (no auth) |
 | GET | `/api/stats` | Dashboard counts |
 | POST | `/api/scans` | Start scan (async) |
-| GET | `/api/scans` | List scans |
+| POST | `/api/scans/all` | Thorough scan every known device IP |
+| GET | `/api/scans` | List scans (includes `progress_pct`) |
 | GET | `/api/scans/{id}` | Detail incl. raw nmap / progress |
 | GET | `/api/devices` | Latest device snapshot |
 | GET | `/api/devices/{id}` | Device + port history |
@@ -104,13 +108,13 @@ Prefix `/api`. Bearer auth unless disabled.
 | GET | `/api/alerts` | Alert feed (`acknowledged`, `kind` filters) |
 | PATCH | `/api/alerts/{id}` | Acknowledge |
 | GET | `/api/settings` | Read defaults |
-| PUT | `/api/settings` | Update defaults; reschedules cron |
+| PUT | `/api/settings` | Update host-discovery / deep-scan defaults |
 
 Routers are registered in `app/main.py`. Schemas live in `app/api/schemas.py`.
 
 ## Data model (SQLite)
 
-- **Scan** — target CIDR, type, status (`pending|running|done|error`), nmap XML path, stdout, `progress_log`
+- **Scan** — target CIDR, type, status (`pending|running|done|error`), nmap XML path, stdout, `progress_log`, `progress_pct`
 - **Device** — ip/mac/hostname/vendor/os_guess, first/last seen; unique on `(mac, ip)`
 - **Port** — per device/scan; unique on `(device_id, port, protocol, scan_id)`
 - **Alert** — `kind`: `new_device` | `new_port` | `port_closed`; severity + JSON detail
