@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Launch Lighthouse backend + frontend together, stream their output with
 # prefixed lines, and tear both down when this script exits (Ctrl-C or kill).
+# On startup, reclaim backend/frontend ports left by a previous non-graceful exit.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,6 +16,54 @@ FRONTEND_PID=""
 log()  { printf '\033[90m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"; }
 err()  { printf '\033[91m[%s] ERROR:\033[0m %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 bold() { printf '\033[1m%s\033[0m' "$*"; }
+
+# PIDs listening on a TCP port (macOS + Linux via lsof).
+pids_on_port() {
+  local port="$1"
+  if ! command -v lsof >/dev/null 2>&1; then
+    return 0
+  fi
+  # -n/-P: skip DNS/port name lookups (faster, quieter).
+  lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
+}
+
+# Signal a list of PIDs (and their process groups when possible).
+signal_pids() {
+  local sig="$1"
+  shift
+  local pid
+  for pid in "$@"; do
+    [[ -n "$pid" ]] || continue
+    kill -"$sig" -"$pid" 2>/dev/null || kill -"$sig" "$pid" 2>/dev/null || true
+  done
+}
+
+# Free a listen port left behind by a previous non-graceful exit
+# (terminal closed, kill -9, crash). Safe no-op if the port is clear.
+free_port() {
+  local port="$1" label="$2"
+  local pids
+  pids=$(pids_on_port "$port")
+  # shellcheck disable=SC2086
+  set -- $pids
+  if [[ $# -eq 0 ]]; then
+    return 0
+  fi
+  log "port $port still in use (stale $label from a previous run); freeing..."
+  signal_pids TERM "$@"
+  sleep 1
+  pids=$(pids_on_port "$port")
+  # shellcheck disable=SC2086
+  set -- $pids
+  if [[ $# -gt 0 ]]; then
+    signal_pids KILL "$@"
+    sleep 0.3
+  fi
+  if [[ -n "$(pids_on_port "$port")" ]]; then
+    err "could not free port $port — stop the process manually and retry"
+    exit 1
+  fi
+}
 
 cleanup() {
   echo
@@ -84,6 +133,10 @@ fi
 BIND_HOST="${LIGHTHOUSE_BIND_HOST:-127.0.0.1}"
 BIND_PORT="${LIGHTHOUSE_BIND_PORT:-8000}"
 FRONTEND_PORT=5173
+
+# Reclaim ports left by a previous non-graceful exit before we bind.
+free_port "$BIND_PORT" "backend"
+free_port "$FRONTEND_PORT" "frontend"
 
 # --- launch ------------------------------------------------------------------
 
