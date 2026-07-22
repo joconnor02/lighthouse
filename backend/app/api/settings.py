@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app import config as app_config
 from app.core.auth import require_token
-from app.core.scanner import PORT_OBSERVING_TYPES, validate_port_range, validate_target
+from app.core.scanner import PORT_OBSERVING_TYPES, _persist_lock, validate_port_range, validate_target
+from app.db.models import Alert, Device, Port, Scan, Setting
 from app.db.seed import DEFAULTS, get_setting, set_setting
 from app.db.session import get_db
 
-from app.api.schemas import SettingsOut, SettingsUpdate
+from app.api.schemas import SettingsOut, SettingsUpdate, WipeResult
 
 
 router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(require_token)])
@@ -69,3 +72,40 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)) -> d
         )
 
     return _settings_dict(db)
+
+
+@router.post("/wipe", response_model=WipeResult)
+def wipe_database(db: Session = Depends(get_db)) -> WipeResult:
+    """Delete all scan history (devices, ports, alerts, scans) and reset settings."""
+    active = db.scalar(
+        select(func.count())
+        .select_from(Scan)
+        .where(Scan.status.in_(("pending", "running")))
+    )
+    if active:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot wipe while a scan is pending or running — wait for it to finish",
+        )
+
+    with _persist_lock:
+        deleted = {
+            "ports": db.execute(delete(Port)).rowcount or 0,
+            "alerts": db.execute(delete(Alert)).rowcount or 0,
+            "devices": db.execute(delete(Device)).rowcount or 0,
+            "scans": db.execute(delete(Scan)).rowcount or 0,
+            "settings": db.execute(delete(Setting)).rowcount or 0,
+        }
+        for key, value in DEFAULTS.items():
+            db.add(Setting(key=key, value=value))
+        db.commit()
+
+    xml_dir = app_config.settings.xml_dir
+    if xml_dir.is_dir():
+        for path in xml_dir.glob("scan_*.xml"):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+    return WipeResult(ok=True, deleted=deleted)
