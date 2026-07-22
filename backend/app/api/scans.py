@@ -80,4 +80,5 @@ def get_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
         "alert_count": alert_count,
         "nmap_xml_path": s.nmap_xml_path,
         "nmap_stdout": s.nmap_stdout,
+        "progress_log": s.progress_log or "",
     }

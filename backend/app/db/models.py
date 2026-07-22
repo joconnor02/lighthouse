@@ -36,6 +36,7 @@ class Scan(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     nmap_xml_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     nmap_stdout: Mapped[str | None] = mapped_column(Text, nullable=True)
+    progress_log: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
     devices: Mapped[list["Device"]] = relationship(
         back_populates="scan", cascade="all, delete-orphan"

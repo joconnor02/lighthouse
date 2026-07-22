@@ -32,6 +32,7 @@ class ScanOut(BaseModel):
 class ScanDetail(ScanOut):
     nmap_xml_path: str | None
     nmap_stdout: str | None
+    progress_log: str = ""
 
 
 class PortOut(BaseModel):
