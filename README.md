@@ -1,139 +1,107 @@
 # Lighthouse
 
-A locally hosted, web-based network visibility tool. Lighthouse scans your LAN
-for devices and open ports, stores results in SQLite, and surfaces a dashboard
-with alerts when new devices appear, new ports open, or previously open ports
-close.
+See what's on your local network — devices, open ports, and changes over time — from a simple dashboard in your browser.
 
-## What it does
+Lighthouse runs entirely on your machine. It scans your LAN, remembers what it finds, and alerts you when something new shows up or when a previously open port disappears.
 
-- **Device discovery** — uses `nmap` to find live hosts on a CIDR (ARP/ping).
-- **Port & service detection** — TCP connect scans by default (no root needed);
-  SYN, version, and OS detection scans available when run with privileges.
-- **Persistent history** — every scan is stored in SQLite so you can see trends.
-- **Alerts** — new devices, newly open ports, and closed ports are flagged.
-- **Recurring scans** — optional cron schedule, run via APScheduler.
-- **Dashboard** — React UI with stats, device table, port history, and alerts.
+## Features
 
-## Architecture
+- **Find devices** on your network (phones, laptops, printers, IoT gadgets, and more)
+- **See open ports and services** so you know what each device is exposing
+- **Track history** across scans so trends and one-off appearances are visible
+- **Get alerts** when new devices appear, new ports open, or ports close
+- **Schedule recurring scans** so you don't have to remember to run them
+- **Stay local** — no cloud account, no phone-home; data stays in a SQLite file on your machine
 
-```
-backend/   FastAPI + python-nmap + SQLAlchemy + APScheduler + SQLite
-frontend/  React + Vite + TypeScript + Tailwind + TanStack Query + Recharts
-```
+## Quick start
 
-The backend exposes `/api/*` endpoints and serves the scanner. The frontend is a
-Vite dev server that proxies `/api` to the backend on `127.0.0.1:8000`.
-
-## Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- `nmap` installed and on your `PATH` (`brew install nmap`, `apt install nmap`, etc.)
-
-## Setup
-
-### Backend
+**Requirements:** Python 3.11+, Node.js 18+, and [nmap](https://nmap.org/) on your `PATH`.
 
 ```bash
+# Install nmap if needed
+# macOS:  brew install nmap
+# Linux:  sudo apt install nmap
+
+./dev.sh
+```
+
+That starts both the API and the web UI. Open **http://127.0.0.1:5173**.
+
+On first launch, check the backend logs for an auth token (or set one in `backend/.env` — see below). Paste it into **Settings** in the UI, then run a scan from the **Dashboard**.
+
+### Manual setup (optional)
+
+If you prefer to run the pieces yourself:
+
+```bash
+# Backend
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 cp ../.env.example .env   # then edit LIGHTHOUSE_AUTH_TOKEN
-alembic upgrade head       # create SQLite schema
-./run.sh                   # starts uvicorn on 127.0.0.1:8000
-```
+alembic upgrade head
+./run.sh                  # http://127.0.0.1:8000
 
-On first run, if you did not set `LIGHTHOUSE_AUTH_TOKEN`, the server will print
-an auto-generated token to its logs. Copy it into the Settings page in the UI
-(or set it in `.env` and restart).
-
-### Frontend
-
-```bash
+# Frontend (separate terminal)
 cd frontend
 npm install
-npm run dev                # starts Vite on http://127.0.0.1:5173
+npm run dev               # http://127.0.0.1:5173
 ```
 
-Open http://127.0.0.1:5173, paste your auth token into Settings if auth is
-enabled, then trigger a scan from the Dashboard.
-
-## Scan types
-
-| Type       | nmap flags        | Needs root | Notes                                   |
-|------------|-------------------|------------|-----------------------------------------|
-| `fast`     | `-sn -PE -PA...`  | no         | Host discovery only (no port scan)     |
-| `connect`  | `-sT -T4`         | no         | TCP connect scan; safe default          |
-| `syn`      | `-sS -T4`         | yes        | SYN scan; faster, needs `sudo`/`cap_net_raw` |
-| `intense`  | `-sS -sV -O -A`   | yes        | Version + OS detection; slowest         |
-
-To enable SYN/intense scans without running the whole server as root, grant the
-`cap_net_raw` capability to the Python binary that runs uvicorn:
+### Docker (optional)
 
 ```bash
-# Find the python binary inside your venv
-sudo setcap cap_net_raw,cap_net_admin+eip backend/.venv/bin/python
+docker compose up --build
 ```
 
-## API
+The compose file grants network capabilities so deeper scan types can work inside the container.
 
-All endpoints under `/api` require a `Authorization: Bearer <token>` header
-unless `LIGHTHOUSE_AUTH_DISABLED=true`.
+## Using Lighthouse
 
-| Method | Path                  | Description                          |
-|--------|-----------------------|--------------------------------------|
-| GET    | `/api/health`         | Liveness probe                       |
-| GET    | `/api/stats`          | Dashboard summary counts             |
-| POST   | `/api/scans`          | Start a scan (async)                |
-| GET    | `/api/scans`          | List scans                          |
-| GET    | `/api/scans/{id}`     | Scan detail (incl. raw nmap output) |
-| GET    | `/api/devices`        | Latest device snapshot              |
-| GET    | `/api/devices/{id}`   | Device detail + port history        |
-| GET    | `/api/ports`          | All open ports (aggregate)          |
-| GET    | `/api/alerts`         | Alert feed (filter by `acknowledged`, `kind`) |
-| PATCH  | `/api/alerts/{id}`    | Acknowledge an alert                |
-| GET    | `/api/settings`       | Read default settings               |
-| PUT    | `/api/settings`       | Update settings (reschedules cron)  |
+1. Open the dashboard and enter the network to scan (usually something like `192.168.1.0/24`).
+2. Pick a scan type — **connect** is the safe default and does not need admin privileges.
+3. Start the scan and watch progress; when it finishes, devices and ports appear in the tables.
+4. Check **Alerts** for anything that changed since the last scan.
+5. Optionally set a recurring schedule under **Settings**.
 
-## Security & safety
+### Choosing a scan type
 
-- **Bind to localhost by default.** `run.sh` uses `LIGHTHOUSE_BIND_HOST=127.0.0.1`.
-  Do not expose this on an untrusted network without enabling auth and TLS.
-- **Auth.** All `/api` routes require a bearer token. Set
-  `LIGHTHOUSE_AUTH_TOKEN` to a long random value in `.env`. The token is stored
-  in the browser's localStorage on the Settings page.
-- **No remote command execution.** Scan targets are validated against a strict
-  regex (`[A-Za-z0-9._:\-/]+`) before being passed to `nmap` via python-nmap's
-  API — never through a shell.
-- **Authorization.** Only scan networks you own or are explicitly authorized
-  to scan. Scanning networks you don't own may be illegal.
-- **nmap privileges.** SYN and OS-detection scans need root or `cap_net_raw`.
-  Prefer `connect` scans if you don't want to grant privileges.
+| Type | What it does | Privileges |
+|------|----------------|------------|
+| **fast** | Finds live hosts only (no port scan) | None |
+| **connect** | Scans TCP ports the normal way | None — recommended default |
+| **syn** | Faster SYN port scan | Root / elevated network capability |
+| **intense** | Ports + service versions + OS guesses | Root / elevated network capability |
 
-## Development
+Only scan networks you own or are explicitly allowed to scan.
 
-```bash
-# backend with auto-reload
-cd backend && ./run.sh
+## Security notes
 
-# frontend with hot reload
-cd frontend && npm run dev
+- Bound to **localhost** by default — do not expose it on an untrusted network without auth and TLS.
+- API calls require a bearer token (`LIGHTHOUSE_AUTH_TOKEN` in `.env`). The UI stores that token in your browser's localStorage via Settings.
+- Prefer **connect** scans unless you intentionally need SYN/OS detection and understand the privilege trade-off.
 
-# run tests (once added)
-cd backend && pytest
-```
+## Configuration
 
-## Optional: Docker
+Copy `.env.example` to `backend/.env` and adjust as needed:
 
-See `docker-compose.yml` for a one-command run of both services. Note that
-nmap inside the container needs `NET_RAW` / `NET_ADMIN` capabilities to do
-SYN/OS scans, which the compose file grants.
+| Variable | Purpose |
+|----------|---------|
+| `LIGHTHOUSE_AUTH_TOKEN` | Shared secret for the API / UI |
+| `LIGHTHOUSE_BIND_HOST` | Listen address (default `127.0.0.1`) |
+| `LIGHTHOUSE_BIND_PORT` | API port (default `8000`) |
+| `LIGHTHOUSE_DB_PATH` | SQLite database path |
 
-## Roadmap (out of scope for v0.1)
+## Roadmap
+
+Ideas for later versions (not in v0.1):
 
 - CVE matching against detected service versions
 - Live packet capture / flow analysis
-- Multi-user auth and RBAC
-- Email/webhook alert delivery
+- Multi-user auth and roles
+- Email / webhook alert delivery
+
+## For contributors & agents
+
+Architecture, API reference, and development details live in **[AGENTS.md](./AGENTS.md)**.
