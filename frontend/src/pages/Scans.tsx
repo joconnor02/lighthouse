@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Scan } from "../api/client";
 import ScanForm from "../components/ScanForm";
@@ -63,9 +63,8 @@ export default function Scans() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {list.data?.map((s: Scan) => (
-              <>
+              <Fragment key={s.id}>
                 <tr
-                  key={s.id}
                   className="cursor-pointer hover:bg-slate-50"
                   onClick={() => setExpanded(expanded === s.id ? null : s.id)}
                 >
@@ -109,7 +108,7 @@ export default function Scans() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
