@@ -19,6 +19,7 @@ export default function ScanForm({
   const [scanType, setScanType] = useState(defaultScanType);
   const [portRange, setPortRange] = useState(defaultPortRange);
   const [err, setErr] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
   const targetDirty = useRef(false);
   const scanTypeDirty = useRef(false);
   const portRangeDirty = useRef(false);
@@ -30,6 +31,12 @@ export default function ScanForm({
     if (!portRangeDirty.current) setPortRange(defaultPortRange);
   }, [defaultTarget, defaultScanType, defaultPortRange]);
 
+  useEffect(() => {
+    if (!successMsg) return;
+    const t = window.setTimeout(() => setSuccessMsg(""), 4000);
+    return () => window.clearTimeout(t);
+  }, [successMsg]);
+
   const mutation = useMutation({
     mutationFn: () =>
       api.createScan({
@@ -38,6 +45,7 @@ export default function ScanForm({
         port_range: portRange || null,
       }),
     onSuccess: () => {
+      setSuccessMsg("Scan queued.");
       qc.invalidateQueries({ queryKey: ["scans"] });
       qc.invalidateQueries({ queryKey: ["stats"] });
     },
@@ -50,6 +58,7 @@ export default function ScanForm({
       return;
     }
     setErr("");
+    setSuccessMsg("");
     mutation.mutate();
   };
 
@@ -64,6 +73,7 @@ export default function ScanForm({
             targetDirty.current = true;
             setTarget(e.target.value);
             setErr("");
+            setSuccessMsg("");
           }}
           placeholder="192.168.1.0/24"
         />
@@ -76,6 +86,7 @@ export default function ScanForm({
           onChange={(e) => {
             scanTypeDirty.current = true;
             setScanType(e.target.value);
+            setSuccessMsg("");
           }}
         >
           <option value="fast">fast (host discovery)</option>
@@ -92,6 +103,7 @@ export default function ScanForm({
           onChange={(e) => {
             portRangeDirty.current = true;
             setPortRange(e.target.value);
+            setSuccessMsg("");
           }}
           placeholder="1-1024"
         />
@@ -104,9 +116,7 @@ export default function ScanForm({
         {mutation.isError && (
           <span className="ml-3 text-sm text-rose-600">{(mutation.error as Error).message}</span>
         )}
-        {mutation.isSuccess && (
-          <span className="ml-3 text-sm text-emerald-600">Scan queued.</span>
-        )}
+        {successMsg && <span className="ml-3 text-sm text-emerald-600">{successMsg}</span>}
       </div>
     </form>
   );

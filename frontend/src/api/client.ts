@@ -17,17 +17,68 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-// Re-arm the one-shot auth prompt. Call this when the user explicitly saves
-// a new token (e.g. on the Settings page) so a future 401 can prompt again.
+// Re-arm the auth prompt after the user saves a token on Settings.
 export function resetAuthPrompt(): void {
-  promptedForToken = false;
+  authPromptConsumed = false;
+  authPromptPromise = null;
 }
 
-// Tracks whether we've already prompted for a token during the current
-// browser session. Prevents an infinite prompt loop when the entered token
-// is wrong — instead we surface a real error and let the user fix it in the
-// Settings page.
-let promptedForToken = false;
+// Shared 401 gate: concurrent failing queries wait on one prompt, then all
+// retry (or all fail) together. After cancel/wrong-token, further prompts are
+// suppressed until resetAuthPrompt() so we don't loop.
+let authPromptPromise: Promise<boolean> | null = null;
+let authPromptConsumed = false;
+
+function promptForToken(): Promise<boolean> {
+  if (authPromptConsumed && !authPromptPromise) {
+    return Promise.resolve(false);
+  }
+  if (!authPromptPromise) {
+    authPromptPromise = Promise.resolve().then(() => {
+      const entered = window.prompt(
+        "Enter Lighthouse auth token.\n\n" +
+          "If you didn't set LIGHTHOUSE_AUTH_TOKEN, the backend printed an " +
+          "auto-generated one in its terminal output — look for a line like:\n" +
+          "  WARNING ... Using auto-generated auth token ...: auto-XXXX\n\n" +
+          "You can also change it later on the Settings page.",
+      );
+      if (entered) {
+        const trimmed = entered.trim();
+        if (!trimmed) {
+          return false;
+        }
+        setToken(trimmed);
+        return true;
+      }
+      return false;
+    }).finally(() => {
+      authPromptConsumed = true;
+      // Let in-flight waiters finish on the same promise, then clear.
+      queueMicrotask(() => {
+        authPromptPromise = null;
+      });
+    });
+  }
+  return authPromptPromise;
+}
+
+function formatErrorDetail(detail: unknown, fallback: string): string {
+  if (detail == null) return fallback;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "msg" in item) {
+          return String((item as { msg: unknown }).msg);
+        }
+        return JSON.stringify(item);
+      })
+      .join("; ");
+  }
+  if (typeof detail === "object") return JSON.stringify(detail);
+  return String(detail);
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers || {});
@@ -39,22 +90,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   const res = await fetch(path, { ...init, headers });
   if (res.status === 401) {
-    // Only prompt once per session. If a stored token is being rejected,
-    // re-prompting in a loop is worse than failing — the user can fix the
-    // token in the Settings page.
-    if (!promptedForToken) {
-      promptedForToken = true;
-      const entered = prompt(
-        "Enter Lighthouse auth token.\n\n" +
-          "If you didn't set LIGHTHOUSE_AUTH_TOKEN, the backend printed an " +
-          "auto-generated one in its terminal output — look for a line like:\n" +
-          "  WARNING ... Using auto-generated auth token ...: auto-XXXX\n\n" +
-          "You can also change it later on the Settings page.",
-      );
-      if (entered) {
-        setToken(entered); // setToken trims
-        return request<T>(path, init); // retry once; a second 401 throws below
-      }
+    const ok = await promptForToken();
+    if (ok) {
+      return request<T>(path, init);
     }
     throw new Error(
       "Unauthorized. Open the Settings page and paste the correct auth token " +
@@ -62,14 +100,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     );
   }
   if (!res.ok) {
-    let detail = res.statusText;
+    let detail: unknown = res.statusText;
     try {
       const body = await res.json();
-      detail = body.detail || JSON.stringify(body);
+      detail = body.detail ?? body;
     } catch {
       /* ignore */
     }
-    throw new Error(`${res.status}: ${detail}`);
+    throw new Error(`${res.status}: ${formatErrorDetail(detail, res.statusText)}`);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

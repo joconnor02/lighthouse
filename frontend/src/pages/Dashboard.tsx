@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import StatCard from "../components/StatCard";
 import AlertRow from "../components/AlertRow";
 import ScanForm from "../components/ScanForm";
+import QueryError from "../components/QueryError";
 import { formatDateTime } from "../lib/time";
 
 export default function Dashboard() {
@@ -23,6 +24,8 @@ export default function Dashboard() {
         </p>
       </div>
 
+      {stats.isError && <QueryError error={stats.error} onRetry={() => stats.refetch()} />}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Devices" value={stats.data?.device_count ?? null} />
         <StatCard label="Open ports" value={stats.data?.open_port_count ?? null} />
@@ -42,6 +45,11 @@ export default function Dashboard() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
           Run a scan
         </h2>
+        {settings.isError && (
+          <div className="mb-3">
+            <QueryError error={settings.error} onRetry={() => settings.refetch()} />
+          </div>
+        )}
         <ScanForm
           defaultTarget={settings.data?.default_cidr || ""}
           defaultPortRange={settings.data?.port_range || "1-1024"}
@@ -52,6 +60,11 @@ export default function Dashboard() {
       <div className="card">
         <div className="border-b border-slate-100 px-4 py-3 text-sm font-semibold">Recent alerts</div>
         {alerts.isLoading && <div className="p-4 text-sm text-slate-500">Loading…</div>}
+        {alerts.isError && (
+          <div className="p-4">
+            <QueryError error={alerts.error} onRetry={() => alerts.refetch()} />
+          </div>
+        )}
         {alerts.data && alerts.data.length === 0 && (
           <div className="p-4 text-sm text-slate-500">No unacknowledged alerts.</div>
         )}

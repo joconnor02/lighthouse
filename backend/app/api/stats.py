@@ -18,7 +18,16 @@ router = APIRouter(prefix="/stats", tags=["stats"], dependencies=[Depends(requir
 @router.get("", response_model=StatsOut)
 def get_stats(db: Session = Depends(get_db)) -> dict:
     device_count = db.scalar(select(func.count(Device.id))) or 0
-    open_port_count = db.scalar(select(func.count(Port.id)).where(Port.state == "open")) or 0
+    # Current open ports only: rows belonging to each device's latest scan.
+    open_port_count = (
+        db.scalar(
+            select(func.count(Port.id))
+            .select_from(Port)
+            .join(Device, Port.device_id == Device.id)
+            .where(Port.state == "open", Port.scan_id == Device.scan_id)
+        )
+        or 0
+    )
     unack_alert_count = db.scalar(
         select(func.count(Alert.id)).where(Alert.acknowledged == False)  # noqa: E712
     ) or 0

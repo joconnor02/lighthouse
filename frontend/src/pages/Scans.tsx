@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Scan } from "../api/client";
 import ScanForm from "../components/ScanForm";
+import QueryError from "../components/QueryError";
 import { formatDateTime } from "../lib/time";
 
 const STATUS_BADGE: Record<string, string> = {
@@ -24,12 +25,13 @@ export default function Scans() {
     queryKey: ["scan", expanded],
     queryFn: () => api.getScan(expanded!),
     enabled: expanded != null,
-    // Poll the detail endpoint faster while a scan is running so the live
-    // nmap progress log stays fresh; stop polling once it's no longer running.
-    refetchInterval: (query) => (query.state.data?.status === "running" ? 1500 : false),
+    // Poll while queued or running so progress appears without re-expanding.
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "running" || status === "pending" ? 1500 : false;
+    },
   });
 
-  // Auto-scroll the live progress log to the bottom whenever new lines arrive.
   const progressRef = useRef<HTMLPreElement>(null);
   useEffect(() => {
     const el = progressRef.current;
@@ -50,6 +52,11 @@ export default function Scans() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
           New scan
         </h2>
+        {settings.isError && (
+          <div className="mb-3">
+            <QueryError error={settings.error} onRetry={() => settings.refetch()} />
+          </div>
+        )}
         <ScanForm
           defaultTarget={settings.data?.default_cidr || ""}
           defaultPortRange={settings.data?.port_range || "1-1024"}
@@ -60,6 +67,11 @@ export default function Scans() {
       <div className="card overflow-hidden">
         <div className="border-b border-slate-100 px-4 py-3 text-sm font-semibold">Scan history</div>
         {list.isLoading && <div className="p-4 text-sm text-slate-500">Loading…</div>}
+        {list.isError && (
+          <div className="p-4">
+            <QueryError error={list.error} onRetry={() => list.refetch()} />
+          </div>
+        )}
         {list.data && list.data.length === 0 && (
           <div className="p-4 text-sm text-slate-500">No scans yet.</div>
         )}
@@ -100,6 +112,9 @@ export default function Scans() {
                   <tr key={`${s.id}-detail`}>
                     <td colSpan={7} className="bg-slate-50 px-4 py-3">
                       {detail.isLoading && <div className="text-sm text-slate-500">Loading…</div>}
+                      {detail.isError && (
+                        <QueryError error={detail.error} onRetry={() => detail.refetch()} />
+                      )}
                       {detail.data?.error && (
                         <div className="mb-2 text-sm text-rose-600">Error: {detail.data.error}</div>
                       )}
@@ -107,7 +122,8 @@ export default function Scans() {
                         <div className="mb-2">
                           <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                             <span>Live nmap output</span>
-                            {detail.data.status === "running" && (
+                            {(detail.data.status === "running" ||
+                              detail.data.status === "pending") && (
                               <span className="inline-flex items-center gap-1 text-blue-600">
                                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500" />
                                 live
@@ -132,7 +148,9 @@ export default function Scans() {
                           </pre>
                         </div>
                       )}
-                      {!detail.data?.progress_log &&
+                      {!detail.isLoading &&
+                        !detail.isError &&
+                        !detail.data?.progress_log &&
                         !detail.data?.nmap_stdout &&
                         detail.data && (
                           <div className="text-sm text-slate-500">

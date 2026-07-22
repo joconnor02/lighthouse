@@ -4,6 +4,7 @@ import { formatDateTime } from "../lib/time";
 interface AlertRowProps {
   alert: Alert;
   onAcknowledge?: (alert: Alert) => void;
+  acknowledging?: boolean;
 }
 
 const SEVERITY: Record<string, string> = {
@@ -18,7 +19,7 @@ const KIND_LABEL: Record<string, string> = {
   port_closed: "Port closed",
 };
 
-export default function AlertRow({ alert, onAcknowledge }: AlertRowProps) {
+export default function AlertRow({ alert, onAcknowledge, acknowledging = false }: AlertRowProps) {
   const d = alert.detail as Record<string, unknown>;
   const summary =
     alert.kind === "new_device"
@@ -41,8 +42,12 @@ export default function AlertRow({ alert, onAcknowledge }: AlertRowProps) {
         </div>
       </div>
       {onAcknowledge && !alert.acknowledged && (
-        <button className="btn-ghost text-xs" onClick={() => onAcknowledge(alert)}>
-          Acknowledge
+        <button
+          className="btn-ghost text-xs"
+          disabled={acknowledging}
+          onClick={() => onAcknowledge(alert)}
+        >
+          {acknowledging ? "Saving…" : "Acknowledge"}
         </button>
       )}
       {alert.acknowledged && <span className="badge bg-slate-100 text-slate-500">ack</span>}

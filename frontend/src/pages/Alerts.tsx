@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import AlertRow from "../components/AlertRow";
+import QueryError from "../components/QueryError";
 
 type Filter = "all" | "unacked";
 
@@ -10,7 +11,7 @@ export default function Alerts() {
   const [filter, setFilter] = useState<Filter>("unacked");
   const [kind, setKind] = useState<string>("");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["alerts", { filter, kind }],
     queryFn: () =>
       api.listAlerts({
@@ -22,7 +23,10 @@ export default function Alerts() {
 
   const ack = useMutation({
     mutationFn: (id: number) => api.acknowledgeAlert(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["alerts"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["alerts"] });
+      qc.invalidateQueries({ queryKey: ["stats"] });
+    },
   });
 
   return (
@@ -54,13 +58,34 @@ export default function Alerts() {
         </select>
       </div>
 
+      {ack.isError && (
+        <QueryError
+          error={ack.error}
+          onRetry={() => {
+            const id = ack.variables;
+            ack.reset();
+            if (id != null) ack.mutate(id);
+          }}
+        />
+      )}
+
       <div className="card">
         {isLoading && <div className="p-4 text-sm text-slate-500">Loading…</div>}
+        {isError && (
+          <div className="p-4">
+            <QueryError error={error} onRetry={() => refetch()} />
+          </div>
+        )}
         {data && data.length === 0 && (
           <div className="p-4 text-sm text-slate-500">No alerts match this filter.</div>
         )}
         {data?.map((a) => (
-          <AlertRow key={a.id} alert={a} onAcknowledge={(al) => ack.mutate(al.id)} />
+          <AlertRow
+            key={a.id}
+            alert={a}
+            onAcknowledge={(al) => ack.mutate(al.id)}
+            acknowledging={ack.isPending}
+          />
         ))}
       </div>
     </div>

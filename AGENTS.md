@@ -70,7 +70,16 @@ Stack summary:
 | `syn` | `-sS -T4` | yes | Needs root or `cap_net_raw` |
 | `intense` | `-sS -sV -O -T4 -A` | yes | Version + OS detection |
 
-Port range is appended for non-`fast` types when configured. Targets are validated with a strict regex before being passed to python-nmap (never via shell).
+Port range is appended for non-`fast` types when configured. Targets are validated as IP/CIDR/hostname (leading `-` rejected) and passed after `--` to nmap via subprocess (never a shell).
+
+### Persistence / alert semantics
+
+- `Device.scan_id` is a mutable “latest **port** scan” pointer (not updated by `fast` discovery scans), not historical membership.
+- `Scan.device_count` is snapshotted when a scan finishes — use it for history, don’t recompute from `Device.scan_id`.
+- Open-port counts (`/api/stats`, `/api/devices`, `/api/ports`) only include `Port` rows where `Port.scan_id == Device.scan_id`.
+- `port_closed` alerts only run for port-observing scan types (`connect`/`syn`/`intense`) and compare against the previous non-`fast` scan. Offline hosts do not generate `port_closed`.
+- On startup, scans left `pending`/`running` are marked `error` (“Interrupted by server restart”).
+- Always run `alembic upgrade head` before serving (see `dev.sh` / `run.sh`); `create_all` will not add new columns to existing DBs.
 
 To enable SYN/intense without running the whole server as root:
 

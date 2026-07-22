@@ -3,21 +3,34 @@ import { useQuery } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { api } from "../api/client";
 import PortBadge from "../components/PortBadge";
+import QueryError from "../components/QueryError";
 import { formatDateTime } from "../lib/time";
 
 export default function DeviceDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const deviceId = Number(id);
+  const idValid = Number.isFinite(deviceId) && !Number.isNaN(deviceId);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["device", deviceId],
     queryFn: () => api.getDevice(deviceId),
-    enabled: !Number.isNaN(deviceId),
+    enabled: idValid,
   });
 
+  if (!idValid) {
+    return (
+      <div className="card p-6 text-sm text-rose-600">
+        Invalid device id.
+        <button className="btn-ghost ml-3 text-xs" onClick={() => navigate("/devices")}>
+          Back to devices
+        </button>
+      </div>
+    );
+  }
+
   if (isLoading) return <div className="card p-6 text-sm text-slate-500">Loading…</div>;
-  if (error) return <div className="card p-6 text-sm text-rose-600">{(error as Error).message}</div>;
+  if (error) return <QueryError error={error} onRetry={() => refetch()} />;
   if (!data) return null;
 
   // Group ports by scan_id to build a per-scan bar chart of open port counts.
@@ -46,7 +59,7 @@ export default function DeviceDetail() {
           </div>
           <div className="text-sm text-slate-500">
             first seen {formatDateTime(data.first_seen)} · last seen{" "}
-            {formatDateTime(data.last_seen)}
+            {formatDateTime(data.last_seen)} · {data.open_port_count} open now
           </div>
         </div>
       </div>
