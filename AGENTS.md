@@ -160,4 +160,4 @@ Docker: `docker compose up --build` — both services use `network_mode: host`; 
 
 ## Out of scope (v0.1)
 
-CVE matching, live capture, multi-user RBAC, email/webhook delivery — see README roadmap.
+Live traffic analysis, CVE matching — see README roadmap.
