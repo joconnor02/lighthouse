@@ -91,6 +91,7 @@ export interface Scan {
 export interface ScanDetail extends Scan {
   nmap_xml_path: string | null;
   nmap_stdout: string | null;
+  progress_log: string;
 }
 
 export interface Device {
