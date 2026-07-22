@@ -19,6 +19,11 @@ export default function SettingsPage() {
   }, [data]);
 
   useEffect(() => {
+    // Keep the input in sync if another flow (401 prompt) wrote localStorage.
+    setTokenInput(getToken() || "");
+  }, [data]);
+
+  useEffect(() => {
     if (!tokenMsg) return;
     const t = window.setTimeout(() => setTokenMsg(""), 4000);
     return () => window.clearTimeout(t);
@@ -83,11 +88,22 @@ export default function SettingsPage() {
           />
           <button
             className="btn-primary"
-            onClick={() => {
-              setToken(tokenInput.trim());
+            disabled={!tokenInput.trim()}
+            onClick={async () => {
+              const trimmed = tokenInput.trim();
+              if (!trimmed) return;
+              setToken(trimmed);
               resetAuthPrompt();
               setTokenMsg("Token saved — refreshing…");
-              qc.invalidateQueries();
+              try {
+                await qc.invalidateQueries();
+                await api.getSettings();
+                setTokenMsg("Token saved.");
+              } catch (e) {
+                setTokenMsg("");
+                // Leave query errors visible below; re-arm so user can retry prompt.
+                resetAuthPrompt();
+              }
             }}
           >
             Save token

@@ -43,7 +43,11 @@ function promptForToken(): Promise<boolean> {
           "You can also change it later on the Settings page.",
       );
       if (entered) {
-        setToken(entered);
+        const trimmed = entered.trim();
+        if (!trimmed) {
+          return false;
+        }
+        setToken(trimmed);
         return true;
       }
       return false;

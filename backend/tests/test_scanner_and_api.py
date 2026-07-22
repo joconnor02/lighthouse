@@ -16,6 +16,7 @@ def test_validate_target_accepts_normal_values():
     assert validate_target("192.168.1.0/24") == "192.168.1.0/24"
     assert validate_target("10.0.0.1") == "10.0.0.1"
     assert validate_target("router.local") == "router.local"
+    assert validate_target("my_host.local") == "my_host.local"
 
 
 @pytest.mark.parametrize(
@@ -223,3 +224,63 @@ def test_scan_device_count_persists(client):
     rows = client.get("/api/scans").json()
     match = next(r for r in rows if r["id"] == s1_id)
     assert match["device_count"] == 3
+
+
+def test_fast_scan_does_not_wipe_ports_or_emit_closed(client):
+    """Discovery-only scans must not redefine the open-port baseline."""
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        s1 = Scan(target_cidr="192.168.9.0/24", scan_type="connect", status="done", device_count=1)
+        db.add(s1)
+        db.flush()
+        device = Device(scan_id=s1.id, ip="192.168.9.10", mac="aa:bb:cc:dd:ee:01")
+        db.add(device)
+        db.flush()
+        db.add(
+            Port(
+                device_id=device.id,
+                scan_id=s1.id,
+                port=22,
+                protocol="tcp",
+                state="open",
+                service="ssh",
+            )
+        )
+        db.commit()
+        port_scan_id = s1.id
+
+        s2 = Scan(target_cidr="192.168.9.0/24", scan_type="fast", status="running")
+        db.add(s2)
+        db.commit()
+        db.refresh(s2)
+
+        hosts = [
+            {
+                "ip": "192.168.9.10",
+                "mac": "AA:BB:CC:DD:EE:01",  # mixed case — should normalize/match
+                "hostname": None,
+                "vendor": None,
+                "os_guess": None,
+                "ports": [],
+            }
+        ]
+        _persist_hosts(db, s2, hosts)
+        s2.status = "done"
+        s2.device_count = 1
+        db.commit()
+
+        alerts = db.query(Alert).filter(Alert.scan_id == s2.id).all()
+        assert not any(a.kind == "port_closed" for a in alerts)
+
+        db.refresh(device)
+        assert device.scan_id == port_scan_id  # port baseline unchanged
+        assert device.mac == "aa:bb:cc:dd:ee:01"
+    finally:
+        db.close()
+
+    stats = client.get("/api/stats").json()
+    assert stats["open_port_count"] == 1
+    devices = client.get("/api/devices").json()
+    assert devices[0]["open_port_count"] == 1

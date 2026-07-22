@@ -74,11 +74,12 @@ Port range is appended for non-`fast` types when configured. Targets are validat
 
 ### Persistence / alert semantics
 
-- `Device.scan_id` is a mutable “latest scan” pointer, not historical membership.
+- `Device.scan_id` is a mutable “latest **port** scan” pointer (not updated by `fast` discovery scans), not historical membership.
 - `Scan.device_count` is snapshotted when a scan finishes — use it for history, don’t recompute from `Device.scan_id`.
 - Open-port counts (`/api/stats`, `/api/devices`, `/api/ports`) only include `Port` rows where `Port.scan_id == Device.scan_id`.
-- `port_closed` alerts compare previous `Port.scan_id == prev_scan.id` against hosts still present in the current scan (offline hosts do not generate port_closed).
+- `port_closed` alerts only run for port-observing scan types (`connect`/`syn`/`intense`) and compare against the previous non-`fast` scan. Offline hosts do not generate `port_closed`.
 - On startup, scans left `pending`/`running` are marked `error` (“Interrupted by server restart”).
+- Always run `alembic upgrade head` before serving (see `dev.sh` / `run.sh`); `create_all` will not add new columns to existing DBs.
 
 To enable SYN/intense without running the whole server as root:
 

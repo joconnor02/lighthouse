@@ -69,11 +69,9 @@ if [[ ! -d "$FRONTEND/node_modules" ]]; then
   (cd "$FRONTEND" && npm install --silent)
 fi
 
-# Ensure the SQLite schema exists.
-if [[ ! -f "$BACKEND/lighthouse.db" ]]; then
-  log "running alembic migration..."
-  (cd "$BACKEND" && .venv/bin/alembic upgrade head)
-fi
+# Ensure the SQLite schema is up to date (always — create_all won't add columns).
+log "running alembic migration..."
+(cd "$BACKEND" && .venv/bin/alembic upgrade head)
 
 # Load .env if present so the backend sees LIGHTHOUSE_* vars.
 if [[ -f "$BACKEND/.env" ]]; then

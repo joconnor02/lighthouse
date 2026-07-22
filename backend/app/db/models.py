@@ -41,7 +41,7 @@ class Scan(Base):
     device_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     devices: Mapped[list["Device"]] = relationship(
-        back_populates="scan", cascade="all, delete-orphan"
+        back_populates="scan",
     )
     alerts: Mapped[list["Alert"]] = relationship(back_populates="scan")
 

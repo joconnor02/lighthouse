@@ -59,7 +59,14 @@ export default function Alerts() {
       </div>
 
       {ack.isError && (
-        <QueryError error={ack.error} onRetry={() => ack.reset()} />
+        <QueryError
+          error={ack.error}
+          onRetry={() => {
+            const id = ack.variables;
+            ack.reset();
+            if (id != null) ack.mutate(id);
+          }}
+        />
       )}
 
       <div className="card">
@@ -77,7 +84,7 @@ export default function Alerts() {
             key={a.id}
             alert={a}
             onAcknowledge={(al) => ack.mutate(al.id)}
-            acknowledging={ack.isPending && ack.variables === a.id}
+            acknowledging={ack.isPending}
           />
         ))}
       </div>

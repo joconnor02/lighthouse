@@ -18,13 +18,14 @@ from app.core.differ import DiffResult, compute_diff
 log = logging.getLogger(__name__)
 
 # Hostnames / IPv4 / IPv4-CIDR / IPv6. Reject leading dashes so nmap never treats
-# the target as an extra flag (argv injection).
+# the target as an extra flag (argv injection). Underscores allowed in host labels
+# (common on LANs).
 _TARGET_RE = re.compile(
     r"^(?:"
     r"(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?"
     r"|(?:[0-9A-Fa-f:]+)"
-    r"|(?:[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?"
-    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?)*)"
+    r"|(?:[A-Za-z0-9_](?:[A-Za-z0-9_\-]{0,61}[A-Za-z0-9_])?"
+    r"(?:\.[A-Za-z0-9_](?:[A-Za-z0-9_\-]{0,61}[A-Za-z0-9_])?)*)"
     r")$"
 )
 _PORT_RE = re.compile(r"^[0-9,\- ]+$")
@@ -72,7 +73,18 @@ def _nmap_arguments(scan_type: str, port_range: str | None) -> list[str]:
     return args
 
 
-_executor = ThreadPoolExecutor(max_workers=2)
+# Serialize scan execution to avoid SQLite / device-upsert races between
+# overlapping manual and scheduled scans.
+_executor = ThreadPoolExecutor(max_workers=1)
+
+
+def _normalize_mac(mac: str | None) -> str:
+    return (mac or "").strip().lower()
+
+
+def _scan_observes_ports(scan: Scan) -> bool:
+    """Host-discovery (fast) does not enumerate ports — must not redefine open set."""
+    return scan.scan_type != "fast"
 
 
 def shutdown_executor() -> None:
@@ -194,15 +206,26 @@ def run_scan(scan_id: int) -> None:
             scan.nmap_stdout = csv_output or ""
 
             hosts = _extract_hosts(nm)
-            _persist_hosts(db, scan, hosts)
-            scan.status = "done"
-            scan.finished_at = datetime.now(timezone.utc)
-            scan.device_count = len(hosts)
-            db.commit()
-            log.info("Scan %s done: %d hosts", scan_id, len(hosts))
+            try:
+                _persist_hosts(db, scan, hosts)
+                scan.status = "done"
+                scan.finished_at = datetime.now(timezone.utc)
+                scan.device_count = len(hosts)
+                db.commit()
+                log.info("Scan %s done: %d hosts", scan_id, len(hosts))
+            except Exception as e:  # noqa: BLE001
+                # Roll back partial device/port/alert upserts before marking error.
+                db.rollback()
+                scan = db.get(Scan, scan_id)
+                if scan is not None:
+                    _fail(db, scan, f"persist failed: {e}")
+                log.exception("Failed to persist scan %s", scan_id)
         except Exception as e:  # noqa: BLE001
             try:
-                _fail(db, scan, f"scan failed: {e}")
+                db.rollback()
+                scan = db.get(Scan, scan_id)
+                if scan is not None:
+                    _fail(db, scan, f"scan failed: {e}")
             except Exception:  # noqa: BLE001
                 log.exception("Failed to mark scan %s as error", scan_id)
             log.exception("Scan %s failed", scan_id)
@@ -284,9 +307,10 @@ def _persist_hosts(db, scan: Scan, hosts: list[dict]) -> DiffResult:
     now = datetime.now(timezone.utc)
     new_devices: list[Device] = []
     new_ports: list[tuple[Device, dict]] = []
+    observes_ports = _scan_observes_ports(scan)
 
     for h in hosts:
-        mac = (h.get("mac") or "").strip()
+        mac = _normalize_mac(h.get("mac"))
         ip = (h.get("ip") or "").strip()
         if not ip and not mac:
             continue
@@ -306,11 +330,13 @@ def _persist_hosts(db, scan: Scan, hosts: list[dict]) -> DiffResult:
             db.flush()
             new_devices.append(device)
         else:
-            device.scan_id = scan.id
+            # Discovery-only scans must not move the port baseline pointer.
+            if observes_ports:
+                device.scan_id = scan.id
             device.last_seen = now
             # Keep identity fresh across DHCP / newly-learned MAC.
             if ip:
-                device.ip = ip
+                _claim_ip(db, device, ip)
             if mac:
                 device.mac = mac
             if h.get("hostname"):
@@ -320,62 +346,75 @@ def _persist_hosts(db, scan: Scan, hosts: list[dict]) -> DiffResult:
             if h.get("os_guess"):
                 device.os_guess = h["os_guess"]
 
-        for p in h.get("ports", []):
-            if p["state"] != "open":
-                continue
-            existing = (
-                db.query(Port)
-                .filter(
-                    Port.device_id == device.id,
-                    Port.port == p["port"],
-                    Port.protocol == p["protocol"],
-                    Port.scan_id == scan.id,
-                )
-                .first()
-            )
-            if existing is None:
-                prior = (
+        if observes_ports:
+            for p in h.get("ports", []):
+                if p["state"] != "open":
+                    continue
+                existing = (
                     db.query(Port)
                     .filter(
                         Port.device_id == device.id,
                         Port.port == p["port"],
                         Port.protocol == p["protocol"],
-                        Port.scan_id != scan.id,
+                        Port.scan_id == scan.id,
                     )
                     .first()
                 )
-                port = Port(
-                    device_id=device.id,
-                    scan_id=scan.id,
-                    port=p["port"],
-                    protocol=p["protocol"],
-                    state="open",
-                    service=p.get("service"),
-                    version=p.get("version"),
-                    first_seen=now,
-                    last_seen=now,
-                )
-                db.add(port)
-                if prior is None:
-                    new_ports.append((device, p))
-            else:
-                existing.last_seen = now
-                if p.get("service"):
-                    existing.service = p["service"]
-                if p.get("version"):
-                    existing.version = p["version"]
+                if existing is None:
+                    prior = (
+                        db.query(Port)
+                        .filter(
+                            Port.device_id == device.id,
+                            Port.port == p["port"],
+                            Port.protocol == p["protocol"],
+                            Port.scan_id != scan.id,
+                        )
+                        .first()
+                    )
+                    port = Port(
+                        device_id=device.id,
+                        scan_id=scan.id,
+                        port=p["port"],
+                        protocol=p["protocol"],
+                        state="open",
+                        service=p.get("service"),
+                        version=p.get("version"),
+                        first_seen=now,
+                        last_seen=now,
+                    )
+                    db.add(port)
+                    if prior is None:
+                        new_ports.append((device, p))
+                else:
+                    existing.last_seen = now
+                    if p.get("service"):
+                        existing.service = p["service"]
+                    if p.get("version"):
+                        existing.version = p["version"]
 
     db.flush()
-    closed_ports = _detect_closed_ports(db, scan, hosts)
+    closed_ports = _detect_closed_ports(db, scan, hosts) if observes_ports else []
 
     return compute_diff(db, scan, new_devices, new_ports, closed_ports)
 
 
+def _claim_ip(db, device: Device, ip: str) -> None:
+    """Assign IP to device; clear it from any other device (DHCP move)."""
+    conflicts = (
+        db.query(Device)
+        .filter(Device.ip == ip, Device.id != device.id)
+        .all()
+    )
+    for other in conflicts:
+        other.ip = ""
+    device.ip = ip
+
+
 def _find_device(db, mac: str, ip: str):
-    from sqlalchemy import or_
+    from sqlalchemy import func, or_
 
     if mac:
-        row = db.query(Device).filter(Device.mac == mac).first()
+        row = db.query(Device).filter(func.lower(Device.mac) == mac).first()
         if row:
             return row
     if ip:
@@ -385,22 +424,33 @@ def _find_device(db, mac: str, ip: str):
         ).first()
         if row:
             return row
+        # Sighting without MAC: still match a MAC-bearing row on the same IP.
+        if not mac:
+            row = db.query(Device).filter(Device.ip == ip).first()
+            if row:
+                return row
     return None
 
 
 def _detect_closed_ports(
     db, scan: Scan, current_hosts: list[dict]
 ) -> list[tuple[Device, dict]]:
-    """Find ports open on the previous scan for hosts that are still up but missing the port.
+    """Find ports open on the previous *port* scan that are missing on live hosts now.
 
-    Uses Port.scan_id for history — Device.scan_id is a mutable "latest scan"
+    Uses Port.scan_id for history — Device.scan_id is a mutable "latest port scan"
     pointer and cannot be used for membership in the previous scan.
+    Skipped entirely for discovery-only scans (caller).
     """
     from sqlalchemy import desc
 
     prev_scan = (
         db.query(Scan)
-        .filter(Scan.target_cidr == scan.target_cidr, Scan.id < scan.id, Scan.status == "done")
+        .filter(
+            Scan.target_cidr == scan.target_cidr,
+            Scan.id < scan.id,
+            Scan.status == "done",
+            Scan.scan_type != "fast",
+        )
         .order_by(desc(Scan.id))
         .first()
     )
@@ -413,10 +463,10 @@ def _detect_closed_ports(
         open_set = {
             (p["port"], p["protocol"]) for p in h.get("ports", []) if p["state"] == "open"
         }
-        mac = (h.get("mac") or "").strip()
+        mac = _normalize_mac(h.get("mac"))
         ip = (h.get("ip") or "").strip()
         if mac:
-            current_by_mac[mac.lower()] = open_set
+            current_by_mac[mac] = open_set
         if ip:
             current_by_ip[ip] = open_set
 

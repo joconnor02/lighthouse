@@ -10,7 +10,12 @@ from apscheduler.triggers.cron import CronTrigger
 from app.db.models import Scan
 from app.db.session import SessionLocal
 from app.db.seed import get_setting
-from app.core.scanner import enqueue_scan, validate_target, validate_port_range
+from app.core.scanner import (
+    enqueue_scan,
+    validate_port_range,
+    validate_scan_type,
+    validate_target,
+)
 
 
 log = logging.getLogger(__name__)
@@ -28,8 +33,18 @@ def _run_scheduled_scan() -> None:
         try:
             target = validate_target(target)
             port_range = validate_port_range(port_range)
+            scan_type = validate_scan_type(scan_type)
         except ValueError as e:
             log.error("Scheduled scan skipped: %s", e)
+            return
+        # Don't pile on if a scan is already in flight.
+        active = (
+            db.query(Scan)
+            .filter(Scan.status.in_(("pending", "running")))
+            .first()
+        )
+        if active is not None:
+            log.info("Scheduled scan skipped: scan %s still %s", active.id, active.status)
             return
         scan = Scan(target_cidr=target, scan_type=scan_type, port_range=port_range, status="pending")
         db.add(scan)
