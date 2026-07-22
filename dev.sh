@@ -172,14 +172,14 @@ log "starting backend on http://$BIND_HOST:$BIND_PORT ..."
 (
   cd "$BACKEND"
   exec .venv/bin/uvicorn app.main:app --host "$BIND_HOST" --port "$BIND_PORT" --reload
-) < /dev/null 2>&1 | prefix_stream "backend" "36" &
+) 2>&1 | prefix_stream "backend" "36" &
 BACKEND_PID=$!
 
 log "starting frontend on http://127.0.0.1:$FRONTEND_PORT ..."
 (
   cd "$FRONTEND"
   exec npm run dev -- --host 127.0.0.1 --port "$FRONTEND_PORT" --strictPort
-) < /dev/null 2>&1 | prefix_stream "frontend" "35" &
+) 2>&1 | prefix_stream "frontend" "35" &
 FRONTEND_PID=$!
 
 # Wait a moment for ports to come up, then probe health.
