@@ -21,6 +21,8 @@ services:
     build: ./frontend
     container_name: lighthouse-frontend
     depends_on: [backend]
-    ports:
-      - "5173:5173"
+    # Match the backend's host networking so the vite preview /api proxy can
+    # reach 127.0.0.1:8000 on the host. With host networking the `ports` map
+    # is redundant (vite preview binds 0.0.0.0:5173 directly).
+    network_mode: host
     restart: unless-stopped
