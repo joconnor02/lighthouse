@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import StatCard from "../components/StatCard";
 import AlertRow from "../components/AlertRow";
 import ScanForm from "../components/ScanForm";
+import { formatDateTime } from "../lib/time";
 
 export default function Dashboard() {
   const stats = useQuery({ queryKey: ["stats"], queryFn: api.stats, refetchInterval: 5_000 });
@@ -32,7 +33,7 @@ export default function Dashboard() {
         />
         <StatCard
           label="Last scan"
-          value={stats.data?.last_scan_at ? new Date(stats.data.last_scan_at).toLocaleString() : "—"}
+          value={formatDateTime(stats.data?.last_scan_at)}
           hint={stats.data?.last_scan_status ? `status: ${stats.data.last_scan_status}` : undefined}
         />
       </div>

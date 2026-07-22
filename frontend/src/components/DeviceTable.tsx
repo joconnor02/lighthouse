@@ -1,4 +1,5 @@
 import type { Device } from "../api/client";
+import { formatDateTime } from "../lib/time";
 
 interface DeviceTableProps {
   devices: Device[];
@@ -37,7 +38,7 @@ export default function DeviceTable({ devices, onSelect }: DeviceTableProps) {
               <td className="px-4 py-3 text-slate-600">{d.os_guess || "—"}</td>
               <td className="px-4 py-3 text-right font-semibold">{d.open_port_count}</td>
               <td className="px-4 py-3 text-xs text-slate-500">
-                {new Date(d.last_seen).toLocaleString()}
+                {formatDateTime(d.last_seen)}
               </td>
             </tr>
           ))}
