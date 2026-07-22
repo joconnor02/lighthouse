@@ -27,7 +27,7 @@ Lighthouse runs entirely on your machine. It scans your LAN, remembers what it f
 
 That starts both the API and the web UI. Open **http://127.0.0.1:5173**.
 
-On first launch, check the backend logs for an auth token (or set one in `backend/.env` — see below). Paste it into **Settings** in the UI. Host discovery starts automatically; open **Devices** (home) to scan individual hosts or scan all.
+On first launch, check the backend logs for an auth token (or set one in `backend/.env` — see below). Paste it into **Settings** in the UI. Leave `./dev.sh` running while you iterate: the UI hot-reloads, and the API reloads on Python changes under `backend/app/`. Host discovery still runs every 5 minutes; with the sample `.env` it is not kicked off again on every API reload. Open **Devices** (home) to scan individual hosts or scan all.
 
 ### Manual setup (optional)
 
@@ -59,7 +59,7 @@ The compose file grants network capabilities so deeper scan types can work insid
 
 ## Using Lighthouse
 
-1. Open the app — **Devices** is the home page. Host discovery runs on launch and every 5 minutes.
+1. Open the app — **Devices** is the home page. Host discovery runs every 5 minutes (and on launch when `LIGHTHOUSE_DISCOVERY_ON_STARTUP` is enabled).
 2. Use **Scan** on a row or **Scan all** for a thorough port scan (uses Settings scan type when it is connect/syn/intense; otherwise **intense**).
 3. Watch per-host and scan-all progress bars; when scans finish, ports and alerts update.
 4. Check **Alerts** for anything that changed since the last scan.
@@ -88,10 +88,12 @@ Copy `.env.example` to `backend/.env` and adjust as needed:
 
 | Variable | Purpose |
 |----------|---------|
-| `LIGHTHOUSE_AUTH_TOKEN` | Shared secret for the API / UI |
+| `LIGHTHOUSE_AUTH_TOKEN` | Shared secret for the API / UI. Leave as `change-me-please` to use a persisted `auto-…` token (survives reload); or set a fixed value / `LIGHTHOUSE_AUTH_DISABLED=true` for local work |
 | `LIGHTHOUSE_BIND_HOST` | Listen address (default `127.0.0.1`) |
 | `LIGHTHOUSE_BIND_PORT` | API port (default `8000`) |
 | `LIGHTHOUSE_DB_PATH` | SQLite database path |
+| `LIGHTHOUSE_AUTH_DISABLED` | Skip bearer auth (local convenience) |
+| `LIGHTHOUSE_DISCOVERY_ON_STARTUP` | Enqueue host discovery when the API process starts (default `true`; sample `.env` sets `false` so `--reload` does not start nmap each save) |
 
 ## Roadmap
 

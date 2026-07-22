@@ -27,7 +27,8 @@ async def lifespan(app: FastAPI):
     init_db()
     recover_stale_scans()
     start_host_discovery_schedule()
-    enqueue_host_discovery()
+    if settings.discovery_on_startup:
+        enqueue_host_discovery()
     if settings.auth_token.startswith("auto-"):
         log.warning(
             "Using auto-generated auth token (set LIGHTHOUSE_AUTH_TOKEN to fix): %s",

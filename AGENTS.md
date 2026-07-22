@@ -52,7 +52,7 @@ Stack summary:
 - Backend listens on `LIGHTHOUSE_BIND_HOST`:`LIGHTHOUSE_BIND_PORT` (default `127.0.0.1:8000`).
 - Frontend Vite dev server on `127.0.0.1:5173`; proxies `/api` → backend.
 - Scans are started asynchronously (`POST /api/scans` creates a row and runs nmap off the request path). Up to several nmap processes run in parallel; DB host/port upserts are serialized with a lock.
-- Host discovery (`fast`) is enqueued on startup and every 5 minutes (always on).
+- Host discovery (`fast`) is enqueued on startup when `LIGHTHOUSE_DISCOVERY_ON_STARTUP` is true (default), and every 5 minutes (always on).
 - After a scan, `differ.py` compares against prior state and writes alerts.
 - Settings (`default_cidr`, `port_range`, `scan_type`, `deep_scan_on_new_device`) live in the DB `settings` table. Devices thorough actions and auto deep-scan-on-discovery use `scan_type` (`connect`/`syn`/`intense`).
 - When `deep_scan_on_new_device` is enabled, finishing a `fast` discovery that found new hosts enqueues a thorough scan per new IP.
@@ -61,8 +61,9 @@ Stack summary:
 ## Auth
 
 - All `/api/*` routes except health require `Authorization: Bearer <token>` unless `LIGHTHOUSE_AUTH_DISABLED=true`.
-- Token from `LIGHTHOUSE_AUTH_TOKEN`. If left as `change-me-please`, startup replaces it with an ephemeral `auto-…` value and logs it.
+- Token from `LIGHTHOUSE_AUTH_TOKEN`. If left as `change-me-please`, startup uses a persisted `auto-…` value in `backend/.lighthouse_auth_token` (so uvicorn `--reload` does not rotate it) and logs it.
 - Frontend stores the token in `localStorage` (Settings page).
+- Host discovery is enqueued on startup when `LIGHTHOUSE_DISCOVERY_ON_STARTUP` is true (default); the 5-minute schedule always runs.
 
 ## Scan types (`backend/app/core/scanner.py`)
 
@@ -127,12 +128,13 @@ DB path: `LIGHTHOUSE_DB_PATH` (relative paths resolve under `backend/`). Migrati
 
 | Var | Default | Notes |
 |-----|---------|-------|
-| `LIGHTHOUSE_AUTH_TOKEN` | `change-me-please` → auto | Required for real installs |
+| `LIGHTHOUSE_AUTH_TOKEN` | `change-me-please` → persisted auto | Required for real installs |
 | `LIGHTHOUSE_BIND_HOST` | `127.0.0.1` | |
 | `LIGHTHOUSE_BIND_PORT` | `8000` | |
 | `LIGHTHOUSE_DB_PATH` | `lighthouse.db` | |
 | `LIGHTHOUSE_NMAP_XML_DIR` | `nmap_xml` | Raw XML storage |
 | `LIGHTHOUSE_AUTH_DISABLED` | `false` | Local-only convenience |
+| `LIGHTHOUSE_DISCOVERY_ON_STARTUP` | `true` | Set `false` locally to skip nmap on each reload |
 
 Loaded from `backend/.env` via pydantic-settings (`env_prefix=LIGHTHOUSE_`).
 
@@ -140,11 +142,13 @@ Loaded from `backend/.env` via pydantic-settings (`env_prefix=LIGHTHOUSE_`).
 
 ```bash
 ./dev.sh                          # preferred: both services + auto setup
-cd backend && ./run.sh            # API only, reload
+cd backend && ./run.sh            # API only, reload (--reload-dir app)
 cd frontend && npm run dev        # UI only
 cd backend && alembic upgrade head
 cd backend && pytest              # when tests exist; optional deps: pip install -e '.[dev]'
 ```
+
+Leave `./dev.sh` (or `./run.sh`) running while editing: frontend uses Vite HMR; backend uses uvicorn `--reload` scoped to `app/`. Expect in-flight scans to abort on a `.py` save (`Interrupted by server restart`). With the sample `.env`, discovery is not re-enqueued on each reload (the 5-minute job still runs), and the auto-token stays stable via `.lighthouse_auth_token`.
 
 Lint backend with ruff (`[tool.ruff]` in `pyproject.toml`, line length 100, py311).
 

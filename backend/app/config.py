@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+AUTH_TOKEN_FILE = BACKEND_DIR / ".lighthouse_auth_token"
 
 
 class Settings(BaseSettings):
@@ -20,6 +21,9 @@ class Settings(BaseSettings):
     nmap_xml_dir: str = "nmap_xml"
     # When True, the auth middleware is skipped (handy for first-run on localhost).
     auth_disabled: bool = False
+    # When True, enqueue a host-discovery scan on process start (also runs every 5m).
+    # Local .env often sets this false so uvicorn --reload does not kick off nmap each save.
+    discovery_on_startup: bool = True
 
     @property
     def db_url(self) -> str:
@@ -38,9 +42,20 @@ class Settings(BaseSettings):
         return p
 
 
+def _resolve_auth_token() -> str:
+    """Reuse a persisted auto-token across reloads; mint one only when missing."""
+    if AUTH_TOKEN_FILE.is_file():
+        stored = AUTH_TOKEN_FILE.read_text(encoding="utf-8").strip()
+        if stored:
+            return stored
+    token = f"auto-{secrets.token_urlsafe(24)}"
+    AUTH_TOKEN_FILE.write_text(token + "\n", encoding="utf-8")
+    return token
+
+
 settings = Settings()
 
-# If the user left the default token and didn't explicitly disable auth, generate
-# an ephemeral one and print a warning at startup so they can find it in logs.
+# If the user left the default token and didn't explicitly disable auth, use a
+# persisted auto-… value so uvicorn --reload does not rotate the UI bearer token.
 if settings.auth_token == "change-me-please" and not settings.auth_disabled:
-    settings.auth_token = f"auto-{secrets.token_urlsafe(24)}"
+    settings.auth_token = _resolve_auth_token()
