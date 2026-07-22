@@ -18,7 +18,6 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("LIGHTHOUSE_DB_PATH", str(db_path))
     monkeypatch.setenv("LIGHTHOUSE_NMAP_XML_DIR", str(xml_dir))
 
-    # Settings / engines are bound at import time — patch every consumer.
     import app.config as config_mod
     import app.db.session as session_mod
     import app.core.scanner as scanner_mod
@@ -59,13 +58,22 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(scanner_mod, "SessionLocal", TestSessionLocal)
     monkeypatch.setattr(scheduler_mod, "SessionLocal", TestSessionLocal)
 
+    import app.db.seed as seed_mod
+
+    monkeypatch.setattr(seed_mod, "SessionLocal", TestSessionLocal)
+
+    def _override_get_db():
+        db = TestSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
     from app.db.models import Base
-    from app.db.seed import seed_defaults
 
     Base.metadata.create_all(bind=engine)
-    seed_defaults()
+    seed_mod.seed_defaults()
 
-    # Avoid real nmap / scheduler during API tests. Patch names bound in main too.
     monkeypatch.setattr(scanner_mod, "enqueue_scan", lambda scan_id: None)
     monkeypatch.setattr(scanner_mod, "recover_stale_scans", lambda: 0)
     monkeypatch.setattr(scanner_mod, "shutdown_executor", lambda: None)
@@ -75,6 +83,12 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(main_mod, "refresh_schedule", lambda: None)
     monkeypatch.setattr(main_mod, "scheduler_shutdown", lambda: None)
     monkeypatch.setattr(main_mod, "shutdown_executor", lambda: None)
+    monkeypatch.setattr(main_mod, "init_db", lambda: None)
 
-    with TestClient(main_mod.app) as c:
-        yield c
+    # Depends() captured the original get_db callable — override it on the app.
+    main_mod.app.dependency_overrides[session_mod.get_db] = _override_get_db
+    try:
+        with TestClient(main_mod.app) as c:
+            yield c
+    finally:
+        main_mod.app.dependency_overrides.pop(session_mod.get_db, None)
